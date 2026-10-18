@@ -1,0 +1,91 @@
+referance :
+
+Using <image1> as the primary reference, create a professional character reference sheet showing the exact same character from multiple angles.
+
+**CHARACTER PRESERVATION**
+Carefully analyze the reference image and preserve the character's recognizable identity: face, hairstyle, hair color, eye color, skin tone, clothing, outfit design, accessories, materials, color palette, and distinctive features. If some details are hidden in the original image, reconstruct them plausibly and consistently with the visible design. Do not redesign, embellish, or replace the character.
+
+**LAYOUT**
+Create exactly four full-body views of the same character, arranged horizontally from left to right:
+
+1. FRONT VIEW: standing upright, facing directly toward the camera.
+2. THREE-QUARTER VIEW: body rotated approximately 45 degrees, showing the front and one side.
+3. SIDE VIEW: standing in a strict 90-degree profile, facing right.
+4. BACK VIEW: facing directly away from the camera.
+
+**POSE AND PROPORTIONS**
+Use a neutral, relaxed standing pose with arms slightly separated from the torso so that the clothing silhouette remains visible. Keep the legs naturally aligned and the feet fully visible. Use the same body proportions, height, anatomy, hairstyle, clothing, and accessories in every view.
+
+**CAMERA AND PRESENTATION**
+Use a consistent orthographic-like camera with no dramatic perspective distortion. All four views must have the same scale, camera height, lighting, and framing. Align the feet along the same horizontal baseline and keep equal spacing between views.
+
+**BACKGROUND AND STYLE**
+Use a plain, neutral, light gray background without scenery or distracting objects. Render the character with clean, readable details and consistent lighting. Preserve the visual art style of the original reference image as closely as possible, whether it is realistic, anime, cartoon, fantasy illustration, or another style.
+
+**OUTPUT REQUIREMENTS**
+One single clean character turnaround reference sheet. Exactly four views of one character. Full body visible in every view, from head to feet. No additional characters, no duplicate views, no action poses, no walking animation, no text, no labels, no panels, no decorative borders, and no overlapping figures.
+
+Prioritize character identity and cross-view consistency over artistic embellishment.
+
+v2 --------------
+
+Using `<image1>` as the primary reference, create a professional character reference sheet showing the exact same character from multiple angles.
+
+**CHARACTER PRESERVATION**
+Carefully analyze the reference image and preserve the character's exact visual identity: face, hairstyle, hair color, eye color, skin tone, clothing, outfit design, accessories, materials, color palette, and distinctive features.
+
+Preserve all distinctive anatomical and fantasy features, including horns, tails, wings, ears, markings, unusual limbs, and other non-human traits whenever present. These features must remain consistent in shape, size, color, and placement across all views.
+
+Do not omit, simplify, replace, or redesign any visible feature. Do not add features that are not supported by the reference.
+
+When a feature is partially obscured or invisible in the original image, reconstruct it conservatively and consistently with the visible design. Do not treat hidden details as absent.
+
+**COLOR AND MATERIAL FIDELITY**
+Match the original reference image's colors as closely as possible. Preserve the original hue, saturation, brightness, contrast, and material appearance of the character's clothing, skin, hair, accessories, and other features.
+
+Avoid desaturated colors, faded colors, gray color casts, excessive soft lighting, and unnecessary changes in contrast. Do not apply a new color grade or artistic reinterpretation. Keep distinctive colors vivid or muted according to the original reference, rather than making everything uniformly brighter or duller.
+
+**LAYOUT**
+Create exactly four full-body views of the same character, arranged horizontally from left to right:
+
+1. FRONT VIEW: standing upright, facing directly toward the camera.
+2. THREE-QUARTER VIEW: body rotated approximately 45 degrees, showing the front and one side.
+3. SIDE VIEW: standing in a strict 90-degree profile, facing right.
+4. BACK VIEW: facing directly away from the camera.
+
+**POSE AND PROPORTIONS**
+Use a neutral, relaxed standing pose with arms slightly separated from the torso so that the clothing silhouette remains visible. Keep the legs naturally aligned and the feet fully visible. Use the same body proportions, height, anatomy, hairstyle, clothing, and accessories in every view.
+
+**CAMERA AND PRESENTATION**
+Use a consistent orthographic-like camera with no dramatic perspective distortion. All four views must have the same scale, camera height, lighting, and framing. Align the feet along the same horizontal baseline and keep equal spacing between views.
+
+**BACKGROUND AND STYLE**
+Use a plain, neutral, light gray background without scenery or distracting objects. Preserve the original visual art style, rendering technique, line quality, texture, and level of detail as closely as possible. Use neutral, consistent lighting without altering the character's original colors.
+
+**OUTPUT REQUIREMENTS**
+One single clean character turnaround reference sheet. Exactly four views of one character. Full body visible in every view, from head to feet. No additional characters, no duplicate views, no action poses, no walking animation, no text, no labels, no panels, no decorative borders, and no overlapping figures.
+
+Prioritize exact character identity, distinctive feature preservation, original color fidelity, and cross-view consistency over artistic embellishment.
+
+
+frame : =============================================================================================================
+
+Use <image1> as the character appearance reference 
+
+Preserve the character from <image1>, including their identity, hairstyle, clothing, colors, accessories, proportions, and original art style.
+
+Create a clean 2D RPG walking sprite sheet with exactly 4 rows and 3 columns.
+
+- First row: walking toward the viewer, front view.
+- Second row: walking toward the left, left-facing profile.
+- Third row: walking toward the right, right-facing profile.
+- Fourth row: walking away from the viewer, back view, with the character's back clearly visible.
+
+Each row represents three consecutive walking animation frames. Keep the character design, scale, and proportions consistent across all frames.
+
+Use a uniform background, consistent spacing, and clearly separated cells. Keep the entire character visible in every cell. No text, labels, borders, scenery, or extra characters.
+
+Output only the sprite sheet.
+
+
+
