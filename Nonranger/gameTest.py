@@ -25,8 +25,10 @@ SPRITE_PATH = (
 BACKGROUND_PATH = (
     Path(sys.argv[2]).expanduser()
     if len(sys.argv) > 2
-    else SCRIPT_DIR / "Krea2_BG.png"
+    else SCRIPT_DIR / "Krea2_BG2.png"
 )
+
+MASK_PATH = SCRIPT_DIR / "Segmentation.png"
 
 if not SPRITE_PATH.is_absolute() and len(sys.argv) > 1:
     SPRITE_PATH = (Path.cwd() / SPRITE_PATH).resolve()
@@ -41,6 +43,7 @@ ANIMATION_FPS = 8
 SPRITE_SCALE = 2  # Échelle de base
 CHARACTER_SCALE = 0.25  # Réduction supplémentaire : 0.50 = moitié de la taille précédente
 DISPLAY_SCALE = SPRITE_SCALE * CHARACTER_SCALE
+COLLISIONS_ENABLED = True
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 720
@@ -179,6 +182,20 @@ background = pygame.transform.smoothscale(
     background_original, (WINDOW_WIDTH, WINDOW_HEIGHT)
 )
 
+try:
+    mask_original = pygame.image.load(str(MASK_PATH)).convert()
+except (pygame.error, FileNotFoundError) as error:
+    pygame.quit()
+    raise SystemExit(f"Impossible de charger le masque :\n{MASK_PATH}\n{error}")
+
+if mask_original.get_size() != background_original.get_size():
+    pygame.quit()
+    raise SystemExit("Le masque doit avoir la même taille que le fond.")
+
+collision_mask = pygame.transform.scale(
+    mask_original, (WINDOW_WIDTH, WINDOW_HEIGHT)
+)
+
 # ============================================================
 # DÉCOUPAGE DES SPRITES
 # ============================================================
@@ -250,6 +267,33 @@ for direction, row in DIRECTIONS.items():
 # CONTRÔLES ET ÉTAT DU PERSONNAGE
 # ============================================================
 
+COLLISION_RADIUS = 5
+
+def is_walkable(x, y):
+    x, y = int(x), int(y)
+
+    if not (0 <= x < WINDOW_WIDTH and 0 <= y < WINDOW_HEIGHT):
+        return False
+
+    red, green, blue, *_ = collision_mask.get_at((x, y))
+
+    # Vert = accessible ; rouge = interdit.
+    return green > red and green > blue
+
+
+def can_stand_at(x, y):
+    # Vérification autour des pieds du personnage.
+    points = [
+        (x, y),
+        (x - COLLISION_RADIUS, y),
+        (x + COLLISION_RADIUS, y),
+        (x, y - COLLISION_RADIUS),
+        (x - COLLISION_RADIUS, y - COLLISION_RADIUS),
+        (x + COLLISION_RADIUS, y - COLLISION_RADIUS),
+    ]
+
+    return all(is_walkable(px, py) for px, py in points)
+
 KEY_DIRECTIONS = {
     pygame.K_UP: "dos",
     pygame.K_DOWN: "face",
@@ -278,8 +322,13 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            running = False
+
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                running = False
+
+            elif event.key == pygame.K_e:
+                COLLISIONS_ENABLED = not COLLISIONS_ENABLED
 
     keys = pygame.key.get_pressed()
 
@@ -295,6 +344,7 @@ while running:
     if keys[pygame.K_DOWN]:
         move_y += 1
 
+
     if move_x != 0 or move_y != 0:
         moving = True
 
@@ -303,8 +353,16 @@ while running:
         move_x /= length
         move_y /= length
 
-        player_x += move_x * MOVE_SPEED * dt
-        player_y += move_y * MOVE_SPEED * dt
+        step_x = move_x * MOVE_SPEED * dt
+        step_y = move_y * MOVE_SPEED * dt
+
+        # Vérifier l'axe horizontal séparément.
+        if not COLLISIONS_ENABLED or can_stand_at(player_x + step_x, player_y):
+            player_x += step_x
+
+        # Vérifier l'axe vertical séparément.
+        if not COLLISIONS_ENABLED or can_stand_at(player_x, player_y + step_y):
+            player_y += step_y
 
         # Choisir l'orientation correspondant à l'axe dominant.
         if abs(move_x) > abs(move_y):
@@ -354,6 +412,7 @@ while running:
         f"Direction : {direction} | État : {status}",
         "Flèches : déplacer le personnage",
         "Échap : quitter",
+        f"Collisions E: {'activées' if COLLISIONS_ENABLED else 'désactivées'} ",
     ]
 
     for i, line in enumerate(info):
