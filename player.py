@@ -2,7 +2,6 @@
 import pygame
 
 from settings import (
-    SPRITE_PATH,
     ROWS,
     COLS,
     IDLE_COL,
@@ -21,14 +20,14 @@ from settings import (
 
 
 class Player:
-    def __init__(self, x, y):
+    def __init__(self, x, y, sprite_path):
         try:
             sheet = pygame.image.load(
-                str(SPRITE_PATH)
+                str(sprite_path)
             ).convert_alpha()
         except (pygame.error, FileNotFoundError) as error:
             raise RuntimeError(
-                f"Impossible de charger la spritesheet : {error}"
+                f"Impossible de charger le personnage : {sprite_path}\n{error}"
             ) from error
 
         sheet_w, sheet_h = sheet.get_size()
@@ -38,8 +37,6 @@ class Player:
 
         self.x = float(x)
         self.y = float(y)
-
-        # Position (x, y) = centre des pieds.
         self.direction = "face"
         self.anim_index = 0
         self.anim_timer = 0.0

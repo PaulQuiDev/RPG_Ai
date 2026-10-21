@@ -1,0 +1,261 @@
+# RPG AI Prototype — Project Context for an AI Coding Assistant
+
+## 1. Project Overview
+
+This is a small 2D RPG prototype written in Python using Pygame. It is being developed on Linux and currently focuses on displaying an animated player sprite on a map, moving the player with the keyboard, and preventing movement into blocked areas using a color-coded collision mask.
+
+The goal of this document is to provide enough project context for an AI coding assistant to make relevant, consistent changes without reverting the project to an older architecture or inventing unconfirmed features.
+
+## 2. Development Environment
+
+- Operating system: Linux (the project has been run on Linux Mint/Ubuntu-like environments).
+- Python: 3.12.7.
+- Pygame: 2.6.1.
+- Project directory currently used: `~/Bureau/RPG_Ai`.
+- Virtual environment: `~/Bureau/RPG_Ai/.venv`.
+- Run the game from the project directory with:
+
+```bash
+cd ~/Bureau/RPG_Ai
+.venv/bin/python main.py
+```
+
+Do not assume another machine, OS, Python version, or directory unless the user says so.
+
+## 3. Current File and Asset Structure
+
+The project currently uses the following intended structure:
+
+```text
+RPG_Ai/
+├── main.py
+├── settings.py
+├── game_map.py
+├── player.py
+└── asset/
+    ├── carater/
+    │   ├── woman.png
+    │   └── man.png              # Referenced by settings; may not exist yet
+    └── world/
+        ├── vil1.png
+        ├── vil1SEG.png
+        ├── forest.png           # Referenced by settings; may not exist yet
+        └── forestSEG.png        # Referenced by settings; may not exist yet
+```
+
+The folder name `carater` is intentionally spelled this way in the current project paths. Do not rename it unless explicitly requested.
+
+The existence of `man.png`, `forest.png`, and `forestSEG.png` has not been confirmed. Treat them as potentially missing placeholder assets. Check the filesystem or ask before assuming they exist.
+
+## 4. Architecture and Responsibilities
+
+### `settings.py`
+
+Central configuration module. It currently defines:
+
+- `BASE_DIR`: project directory derived from `Path(__file__).resolve().parent`.
+- `CHARACTERS`: list of character definitions, each with a display name and sprite-sheet path.
+- `MAPS`: list of map definitions, each with a display name, background path, and collision-mask path.
+- Window dimensions and title.
+- Sprite-sheet layout, animation, scaling, movement speed, collision settings, and sprite crop/anchor offsets.
+
+The configuration currently uses this general pattern:
+
+```python
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+CHARACTERS = [
+    {
+        "name": "Femme",
+        "sprite": BASE_DIR / "asset/carater/woman.png",
+    },
+    {
+        "name": "Homme",
+        "sprite": BASE_DIR / "asset/carater/man.png",
+    },
+]
+
+MAPS = [
+    {
+        "name": "Village",
+        "background": BASE_DIR / "asset/world/vil1.png",
+        "mask": BASE_DIR / "asset/world/vil1SEG.png",
+    },
+    {
+        "name": "Forêt",
+        "background": BASE_DIR / "asset/world/forest.png",
+        "mask": BASE_DIR / "asset/world/forestSEG.png",
+    },
+]
+```
+
+Only keep entries for assets that actually exist, or handle missing assets gracefully. Do not reintroduce the old global constants `SPRITE_PATH`, `BACKGROUND_PATH`, or `MASK_PATH` unless deliberately migrating the architecture.
+
+Important current configuration values:
+
+```python
+WINDOW_WIDTH = 960
+WINDOW_HEIGHT = 720
+WINDOW_BACKGROUND = (45, 48, 58)
+WINDOW_TITLE = "RPG - Prototype"
+
+ROWS = 4
+COLS = 3
+IDLE_COL = 1
+ANIMATION_FPS = 8
+SPRITE_SCALE = 2
+CHARACTER_SCALE = 0.25
+DISPLAY_SCALE = SPRITE_SCALE * CHARACTER_SCALE
+MOVE_SPEED = 220
+
+COLLISIONS_ENABLED_DEFAULT = True
+COLLISION_RADIUS = 5
+```
+
+Direction-to-row mapping:
+
+```python
+DIRECTIONS = {
+    "face": 0,
+    "gauche": 1,
+    "droite": 2,
+    "dos": 3,
+}
+```
+
+Animation sequence for each direction is `[0, 1, 2, 1]`, with column 1 used as the idle frame. Sprite cropping is controlled by `CROP_OFFSETS`, `CROP_SIZE`, and `ANCHOR_OFFSETS` in `settings.py`. Preserve these tunable settings when changing sprite rendering unless the user asks to redesign it.
+
+### `game_map.py`
+
+Defines `GameMap`, responsible for loading and scaling a background and its collision mask.
+
+Current constructor interface:
+
+```python
+GameMap(background_path, mask_path)
+```
+
+The paths are passed by `main.py` from the selected entry in `MAPS`. The module imports `WINDOW_WIDTH` and `WINDOW_HEIGHT` from `settings.py`; it should not rely on the removed global `BACKGROUND_PATH` or `MASK_PATH`.
+
+Expected responsibilities:
+- Load the background and mask with Pygame.
+- Check that their original dimensions match.
+- Scale them to the game window dimensions.
+- Draw the background.
+- Test whether a point is walkable.
+- Test whether the player's collision area can stand at a given position.
+
+The collision-mask convention is:
+- Green areas represent walkable ground.
+- Non-green areas represent blocked ground.
+- The current point test uses the green channel being greater than the red and blue channels.
+- The mask should have the same source dimensions as its background.
+
+Keep the `can_stand_at` interface consistent with all callers. The code in `main.py` and `player.py` currently calls it with `(x, y, radius)`. A compatible method signature is therefore:
+
+```python
+def can_stand_at(self, x, y, radius=5):
+    ...
+```
+
+Do not change it to accept only a rectangle unless all call sites are updated at the same time.
+
+### `player.py`
+
+Defines `Player`, responsible for loading and slicing the character sprite sheet, animating movement, and drawing the current frame.
+
+Current constructor interface:
+
+```python
+Player(x, y, sprite_path)
+```
+
+The sprite path is supplied by `main.py` from the selected `CHARACTERS` entry. `player.py` must not import the removed `SPRITE_PATH` constant from `settings.py`.
+
+Expected responsibilities:
+- Load the selected sprite sheet using `pygame.image.load(...).convert_alpha()`.
+- Slice the sprite sheet into 4 rows and 3 columns.
+- Apply configurable per-direction/per-column cropping and offsets.
+- Scale frames using `DISPLAY_SCALE`.
+- Move using the arrow keys.
+- Normalize diagonal movement so it is not faster than straight movement.
+- Animate at `ANIMATION_FPS`.
+- Use `GameMap.can_stand_at(x, y, COLLISION_RADIUS)` when collisions are enabled.
+- Draw the sprite with its bottom center approximately aligned to the player's `(x, y)` position.
+
+The expected sprite sheet layout is 4 rows × 3 columns:
+- Row 0: `face` (front-facing view).
+- Row 1: `gauche` (left-facing view).
+- Row 2: `droite` (right-facing view).
+- Row 3: `dos` (back-facing view).
+
+The columns are animation frames 0, 1, 2. The idle frame is column 1. The walking sequence is `[0, 1, 2, 1]`.
+
+Note: `CROP_OFFSETS` and `CROP_SIZE` are tuned to the current sprite sheet and may need adjustment for other sheets. Avoid removing them as part of unrelated changes.
+
+## 5. `main.py` and Current Controls
+
+`main.py` initializes Pygame, selects the first character and map, creates the `GameMap` and `Player`, and runs the main loop.
+
+Current intended controls:
+
+- Arrow keys: move the player.
+- `P`: switch to the next character in `CHARACTERS`.
+- `M`: switch to the next map in `MAPS`.
+- `E`: toggle collision checking.
+- `Esc`: quit the game.
+
+When switching maps, the code attempts to find a walkable spawn position. When switching characters, it rebuilds the player using the new sprite path while preserving the current coordinates.
+
+The map-spawn search calls:
+
+```python
+game_map.can_stand_at(x, y, COLLISION_RADIUS)
+```
+
+Therefore `GameMap.can_stand_at` must support those arguments. Ensure that collision and spawning code use the same interface.
+
+## 6. Known Integration Issues to Watch For
+
+The following problems have already appeared or are directly implied by the code shared so far:
+
+1. **Removed configuration constants:** `SPRITE_PATH`, `BACKGROUND_PATH`, and `MASK_PATH` are not defined in the current `settings.py`. Do not import them. Use the paths in `CHARACTERS` and `MAPS`.
+2. **Collision method signature mismatch:** An earlier version of `GameMap.can_stand_at` accepted only a `rect`, but callers pass `(x, y, radius)`. Make the method and every call site consistent.
+3. **Placeholder assets:** `man.png`, `forest.png`, and `forestSEG.png` may not exist. Missing assets will cause loading errors when selecting them.
+4. **Pygame image conversion:** `.convert()` and `.convert_alpha()` generally require a display mode to have been initialized first. `main.py` should call `pygame.display.set_mode(...)` before creating `GameMap` or `Player`.
+5. **Background/mask dimensions:** The source background and source mask should have identical dimensions. The current `GameMap` constructor checks this.
+6. **Player constructor:** `main.py` passes three arguments `(x, y, sprite_path)`. `Player.__init__` must accept that signature.
+7. **Consistent collision behavior:** `player.py`, `main.py`, and `game_map.py` must agree on what `(x, y)` represents. It currently represents the player's position/foot anchor, with a small collision radius around that point.
+8. **Do not claim the project has been run or tested** unless you actually execute it in the available environment.
+
+When debugging, use the complete traceback and inspect the relevant caller and callee rather than guessing. Prefer the smallest coherent fix across the involved files.
+
+## 7. Development Preferences and Constraints
+
+- Provide practical, technically accurate assistance.
+- Prefer complete, copy-pasteable fixes when several files must change together.
+- Explain which file to edit and where, and include commands to run the project when useful.
+- Preserve existing behavior and configuration unless a change is needed.
+- Do not silently invent assets, features, test results, or project requirements.
+- Do not switch back to the old single-character/single-map architecture.
+- Avoid broad refactors when a focused fix will solve the issue.
+- If code changes affect multiple files, check imports, constructor signatures, and method signatures across all affected files.
+- If a traceback is provided, identify the actual failing line and reason from the evidence in the error.
+- The user communicates in French, but this context document is in English for use with an English-speaking/code-focused LLM. Future explanations to the user can remain in French unless requested otherwise.
+
+## 8. Recommended Workflow for Future Changes
+
+Before modifying code:
+
+1. Read the current versions of all relevant files rather than assuming they match this context document.
+2. Check the exact traceback or observed behavior.
+3. Trace data flow between modules, especially constructor arguments and imported configuration values.
+4. Check whether referenced image assets actually exist.
+5. Make the smallest set of coordinated changes.
+6. Provide the full replacement function or file when partial edits would be error-prone.
+7. State any assumptions and clearly distinguish confirmed facts from likely causes.
+8. Give the exact command to run and ask for the complete traceback if a new error occurs.
+
+This document describes the project context based on code and information shared so far. The current filesystem and code may have changed; always verify them before applying edits.
