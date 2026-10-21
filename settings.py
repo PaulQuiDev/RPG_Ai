@@ -10,7 +10,7 @@ CHARACTERS = [
     },
     {
         "name": "Homme",
-        "sprite": BASE_DIR / "asset/carater/man.png",
+        "sprite": BASE_DIR / "asset/carater/monster.png",
     },
 ]
 
@@ -23,8 +23,8 @@ MAPS = [
     },
     {
         "name": "Forêt",
-        "background": BASE_DIR / "asset/world/forest.png",
-        "mask": BASE_DIR / "asset/world/forestSEG.png",
+        "background": BASE_DIR / "asset/world/fro1.png",
+        "mask": BASE_DIR / "asset/world/fro1SEG.png",
     },
 ]
 
