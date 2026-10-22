@@ -7,10 +7,16 @@ CHARACTERS = [
     {
         "name": "Femme",
         "sprite": BASE_DIR / "asset/carater/woman.png",
+        "scale": 0.25,
+        "speed": 220,
+        "collision_radius": 5,
     },
     {
-        "name": "Homme",
+        "name": "Monster",
         "sprite": BASE_DIR / "asset/carater/monster.png",
+        "scale": 0.35,
+        "speed": 180,
+        "collision_radius": 4.5,
     },
 ]
 
@@ -20,11 +26,21 @@ MAPS = [
         "name": "Village",
         "background": BASE_DIR / "asset/world/vil1.png",
         "mask": BASE_DIR / "asset/world/vil1SEG.png",
+        "perspective": {
+            "enabled": True,
+            "top_scale": 0.60,
+            "bottom_scale": 1.00,
+        },
     },
     {
         "name": "Forêt",
         "background": BASE_DIR / "asset/world/fro1.png",
         "mask": BASE_DIR / "asset/world/fro1SEG.png",
+        "perspective": {
+            "enabled": False,
+            "top_scale": 1.00,
+            "bottom_scale": 1.00,
+        },
     },
 ]
 

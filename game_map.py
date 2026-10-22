@@ -5,7 +5,13 @@ from settings import WINDOW_WIDTH, WINDOW_HEIGHT
 
 
 class GameMap:
-    def __init__(self, background_path, mask_path):
+    def __init__(self, background_path, mask_path, perspective=None,):
+        self.perspective = perspective or {
+            "enabled": False,
+            "top_scale": 1.0,
+            "bottom_scale": 1.0,
+        }
+        
         try:
             original = pygame.image.load(
                 str(background_path)
@@ -65,4 +71,16 @@ class GameMap:
             self.is_walkable(px, py)
             for px, py in points
         )
+    def get_perspective_scale(self, y):
+        perspective = self.perspective
+
+        if not perspective["enabled"]:
+            return 1.0
+
+        top = perspective["top_scale"]
+        bottom = perspective["bottom_scale"]
+
+        t = max(0.0, min(1.0, y / self.height))
+
+        return top + (bottom - top) * t
 

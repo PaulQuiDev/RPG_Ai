@@ -81,6 +81,7 @@ def main():
         game_map = GameMap(
             current_map_data["background"],
             current_map_data["mask"],
+            current_map_data.get("perspective"),
         )
 
         spawn_x, spawn_y = find_spawn(game_map)
@@ -89,7 +90,7 @@ def main():
         player = Player(
             spawn_x,
             spawn_y,
-            character_data["sprite"],
+            character_data,
         )
 
     except (RuntimeError, ValueError, KeyError) as error:
@@ -124,7 +125,7 @@ def main():
                         player = Player(
                             player.x,
                             player.y,
-                            character_data["sprite"],
+                            character_data,
                         )
                     except (RuntimeError, ValueError) as error:
                         print(f"Changement de personnage impossible : {error}")
@@ -138,6 +139,7 @@ def main():
                         new_map = GameMap(
                             map_data["background"],
                             map_data["mask"],
+                            map_data.get("perspective"),
                         )
 
                         new_x, new_y = find_spawn(new_map)
@@ -162,7 +164,7 @@ def main():
         )
 
         game_map.draw(screen)
-        player.draw(screen)
+        player.draw(screen, game_map)
 
         character_name = CHARACTERS[character_index]["name"]
         map_name = MAPS[map_index]["name"]

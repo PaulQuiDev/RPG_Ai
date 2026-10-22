@@ -6,37 +6,51 @@ from settings import (
     COLS,
     IDLE_COL,
     ANIMATION_FPS,
-    DISPLAY_SCALE,
-    MOVE_SPEED,
+    SPRITE_SCALE,
     DIRECTIONS,
     ANIMATION,
     CROP_OFFSETS,
     CROP_SIZE,
     ANCHOR_OFFSETS,
-    COLLISION_RADIUS,
     WINDOW_WIDTH,
     WINDOW_HEIGHT,
 )
 
 
 class Player:
-    def __init__(self, x, y, sprite_path):
+    def __init__(self, x, y, character_data):
+        # Paramètres propres au personnage
+        self.name = character_data["name"]
+        self.sprite_path = character_data["sprite"]
+
+        self.base_scale = (
+            SPRITE_SCALE * character_data.get("scale", 0.25)
+        )
+        self.speed = character_data.get("speed", 220)
+        self.collision_radius = character_data.get(
+            "collision_radius", 5
+        )
+
         try:
             sheet = pygame.image.load(
-                str(sprite_path)
+                str(self.sprite_path)
             ).convert_alpha()
         except (pygame.error, FileNotFoundError) as error:
             raise RuntimeError(
-                f"Impossible de charger le personnage : {sprite_path}\n{error}"
+                f"Impossible de charger le personnage : "
+                f"{self.sprite_path}\n{error}"
             ) from error
 
         sheet_w, sheet_h = sheet.get_size()
-        print(f"Sprite sheet : {sheet_w} x {sheet_h}")
+        print(f"Sprite sheet ({self.name}) : {sheet_w} x {sheet_h}")
 
+        # Les images sont découpées à leur taille de référence.
+        # Leur échelle finale sera appliquée au moment du dessin.
         self.sprites = self._load_sprites(sheet, sheet_w, sheet_h)
 
         self.x = float(x)
         self.y = float(y)
+
         self.direction = "face"
         self.anim_index = 0
         self.anim_timer = 0.0
@@ -72,7 +86,8 @@ class Player:
                 crop_y = center_y - crop_h // 2 + dy
 
                 frame = pygame.Surface(
-                    (crop_w, crop_h), pygame.SRCALPHA
+                    (crop_w, crop_h),
+                    pygame.SRCALPHA,
                 )
 
                 src_left = max(0, crop_x)
@@ -97,15 +112,7 @@ class Player:
 
                     frame.blit(sheet, target_rect, source_rect)
 
-                scaled = pygame.transform.scale(
-                    frame,
-                    (
-                        max(1, round(crop_w * DISPLAY_SCALE)),
-                        max(1, round(crop_h * DISPLAY_SCALE)),
-                    ),
-                )
-
-                sprites[direction].append(scaled)
+                sprites[direction].append(frame)
 
         return sprites
 
@@ -129,20 +136,20 @@ class Player:
             self.anim_timer = 0.0
             return
 
-        # Vitesse identique en diagonale et en ligne droite.
+        # Évite que le déplacement diagonal soit plus rapide.
         length = (move_x**2 + move_y**2) ** 0.5
         move_x /= length
         move_y /= length
 
-        step_x = move_x * MOVE_SPEED * dt
-        step_y = move_y * MOVE_SPEED * dt
+        step_x = move_x * self.speed * dt
+        step_y = move_y * self.speed * dt
 
         def can_move_to(x, y):
             if not collisions_enabled:
                 return True
 
             return game_map.can_stand_at(
-                x, y, COLLISION_RADIUS
+                x, y, self.collision_radius
             )
 
         # Séparer les axes permet de glisser le long des murs.
@@ -153,7 +160,9 @@ class Player:
             self.y += step_y
 
         if abs(move_x) > abs(move_y):
-            self.direction = "droite" if move_x > 0 else "gauche"
+            self.direction = (
+                "droite" if move_x > 0 else "gauche"
+            )
         else:
             self.direction = "face" if move_y > 0 else "dos"
 
@@ -166,23 +175,35 @@ class Player:
                 self.anim_index + 1
             ) % len(sequence)
 
-        # Garder les pieds dans la fenêtre.
         self.x = max(0, min(WINDOW_WIDTH - 1, self.x))
         self.y = max(0, min(WINDOW_HEIGHT - 1, self.y))
 
-    def draw(self, screen):
+    def draw(self, screen, game_map):
         if self.moving:
             col = ANIMATION[self.direction][self.anim_index]
         else:
             col = IDLE_COL
 
-        sprite = self.sprites[self.direction][col]
+        # Facteur de perspective fourni par la carte.
+        perspective_scale = game_map.get_perspective_scale(self.y)
+        final_scale = self.base_scale * perspective_scale
 
-        sprite_x = int(self.x - sprite.get_width() / 2)
-        sprite_y = int(self.y - sprite.get_height())
+        source_sprite = self.sprites[self.direction][col]
+
+        width = max(1, round(source_sprite.get_width() * final_scale))
+        height = max(1, round(source_sprite.get_height() * final_scale))
+
+        sprite = pygame.transform.scale(
+            source_sprite,
+            (width, height),
+        )
+
+        # Le point (x, y) reste ancré au niveau des pieds.
+        sprite_x = round(self.x - sprite.get_width() / 2)
+        sprite_y = round(self.y - sprite.get_height())
 
         anchor_x, anchor_y = ANCHOR_OFFSETS[self.direction]
-        sprite_x += round(anchor_x * DISPLAY_SCALE)
-        sprite_y += round(anchor_y * DISPLAY_SCALE)
+        sprite_x += round(anchor_x * final_scale)
+        sprite_y += round(anchor_y * final_scale)
 
         screen.blit(sprite, (sprite_x, sprite_y))
