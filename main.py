@@ -55,6 +55,92 @@ def find_spawn(game_map):
     )
 
 
+def check_map_transition(player, current_map_data, map_index):
+    """Change de carte lorsque le joueur atteint une sortie."""
+
+    margin = 8
+    x = player.x
+    y = player.y
+
+    side = None
+
+    # Sortie par le bord droit
+    if x >= WINDOW_WIDTH - margin:
+        side = "right"
+
+    # Sortie par le bord gauche
+    elif x <= margin:
+        side = "left"
+
+    # Sortie par le bord supérieur
+    elif y <= margin:
+        side = "top"
+
+    # Sortie par le bord inférieur
+    elif y >= WINDOW_HEIGHT - margin:
+        side = "bottom"
+
+    if side is None:
+        return map_index, None
+
+    exits = current_map_data.get("exits", {})
+    exit_data = exits.get(side)
+
+    if exit_data is None:
+        # Pas de connexion : le joueur reste sur la carte actuelle.
+        player.x = max(10, min(WINDOW_WIDTH - 10, player.x))
+        player.y = max(10, min(WINDOW_HEIGHT - 10, player.y))
+        return map_index, None
+
+    destination_name = exit_data["map"]
+
+    # Cherche la carte de destination par son nom.
+    destination_index = next(
+        (
+            i for i, data in enumerate(MAPS)
+            if data["name"] == destination_name
+        ),
+        None,
+    )
+
+    if destination_index is None:
+        print(f"Carte de destination introuvable : {destination_name}")
+        return map_index, None
+
+    destination_data = MAPS[destination_index]
+
+    try:
+        new_map = GameMap(
+            destination_data["background"],
+            destination_data["mask"],
+            destination_data.get("perspective"),
+        )
+    except (RuntimeError, ValueError, KeyError) as error:
+        print(f"Impossible de charger la carte : {error}")
+        return map_index, None
+
+    spawn_x, spawn_y = exit_data["spawn"]
+
+    # Vérifie que le point d'arrivée est praticable.
+    radius = getattr(player, "collision_radius", 5)
+    if not new_map.can_stand_at(spawn_x, spawn_y, radius):
+        print(
+            f"Point d'arrivée bloqué sur {destination_name} : "
+            f"{spawn_x}, {spawn_y}"
+        )
+        return map_index, None
+
+    player.x = float(spawn_x)
+    player.y = float(spawn_y)
+
+    print(
+        f"Transition : {current_map_data['name']} "
+        f"-> {destination_name} ({side})"
+    )
+
+    return destination_index, new_map
+
+
 def main():
     if not CHARACTERS:
         raise SystemExit("Aucun personnage défini dans settings.py.")
@@ -148,6 +234,7 @@ def main():
                         map_index = next_index
                         player.x = float(new_x)
                         player.y = float(new_y)
+                        
 
                         print(f"Carte chargée : {map_data['name']}")
 
@@ -162,6 +249,17 @@ def main():
             game_map,
             collisions_enabled,
         )
+        current_map_data = MAPS[map_index]
+
+        new_map_index, new_map = check_map_transition(
+            player,
+            current_map_data,
+            map_index,
+        )
+
+        if new_map is not None:
+            map_index = new_map_index
+            game_map = new_map
 
         game_map.draw(screen)
         player.draw(screen, game_map)

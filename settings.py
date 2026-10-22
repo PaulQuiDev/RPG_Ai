@@ -26,20 +26,36 @@ MAPS = [
         "name": "Village",
         "background": BASE_DIR / "asset/world/vil1.png",
         "mask": BASE_DIR / "asset/world/vil1SEG.png",
+
         "perspective": {
             "enabled": True,
-            "top_scale": 0.60,
+            "top_scale": 0.70,
             "bottom_scale": 1.00,
+        },
+
+        "exits": {
+            "right": {
+                "map": "Forêt",
+                "spawn": (10, 400),
+            },
         },
     },
     {
         "name": "Forêt",
         "background": BASE_DIR / "asset/world/fro1.png",
         "mask": BASE_DIR / "asset/world/fro1SEG.png",
+
         "perspective": {
             "enabled": False,
             "top_scale": 1.00,
             "bottom_scale": 1.00,
+        },
+
+        "exits": {
+            "left": {
+                "map": "Village",
+                "spawn": (950, 437),
+            },
         },
     },
 ]

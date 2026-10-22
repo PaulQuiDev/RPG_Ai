@@ -198,6 +198,7 @@ class Player:
             (width, height),
         )
 
+        #print("Position du joueur x , y :", self.x, self.y) # ------------------------------------
         # Le point (x, y) reste ancré au niveau des pieds.
         sprite_x = round(self.x - sprite.get_width() / 2)
         sprite_y = round(self.y - sprite.get_height())
