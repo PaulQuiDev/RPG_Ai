@@ -113,8 +113,12 @@ def main():
         game_map = world.game_map
 
         # 3. Affichage du monde et du personnage
-        game_map.draw(screen, player, pygame.time.get_ticks())
+        # Fond + FG derrière le joueur, puis le joueur, puis
+        # FG devant le joueur + couche interaction (bleu).
+        game_map.draw(screen, player, collisions_enabled)
         player.draw(screen, game_map)
+        game_map.draw_top(screen, player, pygame.time.get_ticks(),
+                          collisions_enabled)
 
         # 4. Affichage des informations
         character_name = CHARACTERS[character_index]["name"]
@@ -129,6 +133,7 @@ def main():
                 f"{'ACTIVÉES' if collisions_enabled else 'DÉSACTIVÉES'}"
             ),
 "Objets bleus : interactifs (s'approche : mise en avant)",
+            "Prémiplan (FG) : devant le joueur derrière un élément",
             "Échap : quitter",
         ]
 

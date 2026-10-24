@@ -35,6 +35,7 @@ class World:
         return GameMap(
             data["background"],
             data["mask"],
+            data.get("foreground"),
             data.get("perspective"),
         )
 

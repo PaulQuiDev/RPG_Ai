@@ -164,10 +164,12 @@ Defines `GameMap`, responsible only for one map's visual and spatial properties.
 Current constructor interface:
 
 ```python
-GameMap(background_path, mask_path, perspective=None)
+GameMap(background_path, mask_path, foreground_path=None, perspective=None)
 ```
 
 The paths and optional perspective configuration come from one entry in `MAPS`. The module imports `WINDOW_WIDTH` and `WINDOW_HEIGHT` from `settings.py`; it must not rely on removed global `BACKGROUND_PATH` or `MASK_PATH` constants.
+
+`foreground_path` is the optional first‑plan layer (e.g. `asset/world/vil1FG.png`). It is optional per map: if omitted or absent the map has no FG layer (`self.fg_elements` is an empty list). When present it must be the same dimensions and position as the background (so its opaque pixels align with the world), and it is loaded with `convert_alpha` + `smoothscale` to the window size.
 
 Responsibilities:
 - Load the background and collision mask with Pygame.
@@ -175,6 +177,10 @@ Responsibilities:
 - Scale them to the game window dimensions.
 - Extract the interactable objects (blue mask pixels) at load time and expose `self.interact_layer` (window-size SRCALPHA surface, constant blue tint over all objects) and `self.interact_objects` (list of `{"box": Rect, "glow": Surface, "glow_pos": (x, y)}`).
 - Draw the background and the interactable layer in `draw(screen, player, time_ms)`: the constant tint is always visible; an enlarged soft glow (with a pulse) is drawn only for objects within `INTERACT_PROXIMITY`, at full strength at contact.
+- The rendering is split in two calls so the player can sit between layers:
+  - `draw(screen, player, collisions)` blits the background and the first‑plan elements that are BEHIND the player (element `box.bottom <= player.y`).
+  - `draw_top(screen, player, time_ms, collisions)` blits the first‑plan elements IN FRONT of the player (`box.bottom > player.y`, only when `collisions` is True — otherwise the player is always in front) and then the interactable layer (constant tint + glows), which is drawn above the player and the FG so the interactive colour is always visible.
+- Extract the first‑plan (FG) connected components at load time into `self.fg_elements`, a list of `{"box": Rect, "surf": SRCALPHA tight surface, "x0": int, "y0": int}`, each pre‑rendered so nothing is computed per frame.
 - Test whether a point is walkable and whether the player's collision area can stand at a given position.
 - Calculate the perspective scale for a player's vertical position using `get_perspective_scale(y)`.
 
@@ -287,7 +293,7 @@ Current intended controls:
 - `E`: toggle collision checking.
 - `Esc`: quit the game.
 
-When switching maps manually, `main.py` calls `world.next_map(player)`. During normal play, it calls `world.check_transition(player)` and then refreshes `game_map = world.game_map`. When switching characters, it rebuilds the player with the selected full `character_data` entry while preserving the current coordinates. The frame is rendered with `game_map.draw(screen, player, pygame.time.get_ticks())`; the player position and clock time are required for highlighting nearby interactable objects.
+When switching maps manually, `main.py` calls `world.next_map(player)`. During normal play, it calls `world.check_transition(player)` and then refreshes `game_map = world.game_map`. When switching characters, it rebuilds the player with the selected full `character_data` entry while preserving the current coordinates. The frame is rendered in two calls so the player can sit between layers: `game_map.draw(screen, player, collisions_enabled)`, then `player.draw(screen, game_map)`, then `game_map.draw_top(screen, player, pygame.time.get_ticks(), collisions_enabled)`. The player position, clock time and the collision flag are required: `draw` places first‑plan elements behind the player, and `draw_top` places first‑plan elements in front of the player (when collisions are enabled) plus the interactive layer on top.
 
 The current `main.py` import pattern should be similar to:
 

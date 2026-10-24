@@ -26,6 +26,8 @@ MAPS = [
         "name": "Village",
         "background": BASE_DIR / "asset/world/vil1.png",
         "mask": BASE_DIR / "asset/world/vil1SEG.png",
+        # Couche de premier plan optionnelle (éléments devant le joueur).
+        "foreground": BASE_DIR / "asset/world/vil1FG.png",
 
         "perspective": {
             "enabled": True,
@@ -130,3 +132,7 @@ INTERACT_PROXIMITY = 70.0
 INTERACT_CONTACT = 45.0
 INTERACT_BLUE_THRESHOLD = 96
 INTERACT_MIN_AREA = 100
+
+# --- Couche de premier plan (FG) ---
+# Surface min de composante FG conservée (filtre le bruit).
+FG_MIN_AREA = 50
