@@ -33,15 +33,18 @@ RPG_Ai/
 ├── game_map.py
 ├── world.py                 # Map registry, loading, transitions and spawn selection
 ├── player.py
+├── behaviors.py             # Interaction behaviors (blue objects)
 └── asset/
     ├── carater/
-    │   ├── woman.png
-    │   └── man.png              # Referenced by settings; may not exist yet
+    │   └── woman.png
     └── world/
         ├── vil1.png
         ├── vil1SEG.png
-        ├── forest.png           # Referenced by settings; may not exist yet
-        └── forestSEG.png        # Referenced by settings; may not exist yet
+        ├── vil1FG.png
+        ├── fro1.png
+        ├── fro2.png           # alternate background (mirror of fro1.png, test)
+        ├── fro1SEG.png
+        └── fro2SEG.png
 ```
 
 The folder name `carater` is intentionally spelled this way in the current project paths. Do not rename it unless explicitly requested.
@@ -56,7 +59,11 @@ Central configuration module. It defines:
 
 - `BASE_DIR`: project directory derived from `Path(__file__).resolve().parent`.
 - `CHARACTERS`: list of character definitions, each with a display name and sprite-sheet path.
-- `MAPS`: list of map definitions, each with a display name, background path, collision-mask path, optional perspective settings, and optional exits.
+- `MAPS`: list of map definitions, each with a display name, background path,
+  collision-mask path, optional foreground layer (`foreground`), optional
+  perspective settings, optional `variants` (list of alternate asset paths per
+  key `mask` / `background` / `foreground`), optional `interactions` (behaviors
+  for blue objects), and optional exits.
 - Window dimensions and title.
 - Sprite-sheet layout, animation, scaling, movement speed, collision settings, and sprite crop/anchor offsets.
 
@@ -83,11 +90,16 @@ MAPS = [
         "name": "Village",
         "background": BASE_DIR / "asset/world/vil1.png",
         "mask": BASE_DIR / "asset/world/vil1SEG.png",
+        "foreground": BASE_DIR / "asset/world/vil1FG.png",
         "perspective": {
             "enabled": True,
             "top_scale": 0.70,
             "bottom_scale": 1.00,
         },
+        "interactions": [
+            {"pos": [x, y], "action": "go_forest"},
+            {"pos": [x, y], "dest": "Forêt"},
+        ],
         "exits": {
             "right": {
                 "map": "Forêt",
@@ -97,17 +109,27 @@ MAPS = [
     },
     {
         "name": "Forêt",
-        "background": BASE_DIR / "asset/world/forest.png",
-        "mask": BASE_DIR / "asset/world/forestSEG.png",
+        "background": FOREST_BG_DEFAULT,
+        "mask": FOREST_SEG_DEFAULT,
+        # Optional: alternate assets switchable at runtime (cycle_map_seg /
+        # cycle_map_bg / cycle_map_fg behaviors).
+        "variants": {
+            "mask": [FOREST_SEG_DEFAULT, FOREST_SEG_ALT],
+            "background": [FOREST_BG_DEFAULT, FOREST_BG_ALT],
+        },
+        "interactions": [
+            {"pos": [x, y], "action": "cycle_map_seg"},
+            {"pos": [x, y], "action": "cycle_map_bg"},
+        ],
         "perspective": {
-            "enabled": True,
-            "top_scale": 0.70,
+            "enabled": False,
+            "top_scale": 1.00,
             "bottom_scale": 1.00,
         },
         "exits": {
             "left": {
                 "map": "Village",
-                "spawn": (40, 360),
+                "spawn": (950, 437),
             },
         },
     },
@@ -136,12 +158,19 @@ MOVE_SPEED = 220
 COLLISIONS_ENABLED_DEFAULT = True
 COLLISION_RADIUS = 5
 
-INTERACT_BASE_ALPHA = 110
-INTERACT_GLOW_ALPHA = 180
+INTERACT_COLOR = (90, 170, 255)
+INTERACT_GLOW_COLOR = (130, 200, 255)
+INTERACT_BASE_ALPHA = 30
+INTERACT_GLOW_ALPHA = 100
 INTERACT_GLOW_PAD = 14
 INTERACT_MAX_SCALE = 0.20
-INTERACT_PROXIMITY = 170
-INTERACT_CONTACT = 45
+INTERACT_PROXIMITY = 80.0
+INTERACT_CONTACT = 45.0
+INTERACT_BLUE_THRESHOLD = 100
+INTERACT_MIN_AREA = 100
+INTERACT_MATCH_TOLERANCE = 90.0
+
+FG_MIN_AREA = 50
 ```
 
 Direction-to-row mapping:
@@ -261,8 +290,14 @@ It takes the current `Player`, the `World`, and the current `GameMap`, and retur
 ```python
 BEHAVIORS: dict[str, Callable]  # registered behavior functions
 go_to_map(player, world, name)  # change map by name (case-insensitive)
-go_forest(player, world, game_map)  # test behavior -> Forêt
+go_forest(player, world, game_map)  # behavior -> Forêt
+go_village(player, world, game_map)  # behavior -> Village
+cycle_map_seg(player, world, game_map)  # current map: next SEG mask variant
+cycle_map_bg(player, world, game_map)  # current map: next background variant
+cycle_map_fg(player, world, game_map)  # current map: next FG layer variant
 ```
+
+`change_map_asset(world, target_name, asset_key, new_path)` changes directly one asset (mask / background / foreground) of a named map, and `cycle_map_variant(world, target_name, asset_key)` switches to the next variant of the `variants` list declared in `settings.py`. Neither belongs to `BEHAVIORS`.
 
 Interaction configuration lives per-map in `settings.py` under the key `"interactions"` (a list, optional per map). Each entry is:
 
@@ -276,6 +311,24 @@ Interaction configuration lives per-map in `settings.py` under the key `"interac
 At runtime `main.py` handles the `I` key: it calls `game_map.get_focused_object(player)` to find the single *closest* in-range interactable, then runs `BEHAVIORS[focus["action"]]` (or `go_to_map(...)` for a `"dest"`). When a map changes, the local `game_map` is refreshed from `world.game_map`.
 
 Visual rule: only the focused (closest in-range) object's glow **pulses/blinks** (`_draw_interaction_layer`); other in-range objects get a dimmer *static* halo. All blue objects keep their constant blue tint.
+
+**Changing a map's active assets at runtime (SEG mask, background, or first-plan
+layer):** a behavior can switch which asset a map uses *without modifying any
+mask file on disk*. `change_map_variant(...)` / `change_map_asset(...)` update
+`world.maps[index]["mask"]` (or `"background"` / `"foreground"`) — a runtime
+config dict, not the file — and — if that map is the currently active one —
+reload it via `World._load_map`. The next load (`World.change_map` →
+`_load_map`) re-extracts the map's blue interactables and FG from the new
+asset, so the "objects you can interact with" change to match the new image.
+Maps declare their alternate assets in `settings.py` under the key
+`"variants"`: a dict of 2+ path lists keyed by `mask`, `background`, or
+`foreground`. The behaviors `cycle_map_seg` / `cycle_map_bg` / `cycle_map_fg`
+cycle that list; if the new asset is incompatible (e.g. size different from
+the mask) the previous state is restored and `False` is returned. Forêt
+declares variants for both `mask` (fro1SEG.png / fro2SEG.png) and
+`background` (fro1.png / fro2.png — test asset, mirror of fro1). To change the
+image of *any other* map, add a `"variants"` entry to its `MAPS` dict and
+attach the matching `cycle_map_*` behavior to a blue object.
 
 ### `player.py`
 
@@ -320,6 +373,7 @@ Current intended controls:
 - `P`: switch to the next character in `CHARACTERS`.
 - `M`: switch to the next map in `MAPS`.
 - `E`: toggle collision checking.
+- `I`: interact with the focused blue object (nearest within `INTERACT_PROXIMITY`, if a behavior is configured).
 - `Esc`: quit the game.
 
 When switching maps manually, `main.py` calls `world.next_map(player)`. During normal play, it calls `world.check_transition(player)` and then refreshes `game_map = world.game_map`. When switching characters, it rebuilds the player with the selected full `character_data` entry while preserving the current coordinates. The frame is rendered in two calls so the player can sit between layers: `game_map.draw(screen, player, collisions_enabled)`, then `player.draw(screen, game_map)`, then `game_map.draw_top(screen, player, pygame.time.get_ticks(), collisions_enabled)`. The player position, clock time and the collision flag are required: `draw` places first‑plan elements behind the player, and `draw_top` places first‑plan elements in front of the player (when collisions are enabled) plus the interactive layer on top.
@@ -344,7 +398,9 @@ The following problems have already appeared or are directly implied by the code
 
 1. **Removed configuration constants:** `SPRITE_PATH`, `BACKGROUND_PATH`, and `MASK_PATH` are not defined in the current `settings.py`. Do not import them. Use the paths in `CHARACTERS` and `MAPS`.
 2. **Collision method signature mismatch:** An earlier version of `GameMap.can_stand_at` accepted only a `rect`, but callers pass `(x, y, radius)`. Make the method and every call site consistent.
-3. **Placeholder assets:** `man.png`, `forest.png`, and `forestSEG.png` may not exist. Missing assets will cause loading errors when selecting them.
+3. **Missing assets:** every path referenced in `settings.py` must exist before
+   a map using it is loaded; a missing asset causes a loading error. `fro2.png`
+   is a generated test asset (horizontal mirror of fro1.png).
 4. **Pygame image conversion:** `.convert()` and `.convert_alpha()` generally require a display mode to have been initialized first. `main.py` should call `pygame.display.set_mode(...)` before creating `GameMap` or `Player`.
 5. **Background/mask dimensions:** The source background and source mask should have identical dimensions. The current `GameMap` constructor checks this.
 6. **Player constructor:** The current architecture passes `(x, y, character_data)` to `Player`; update all constructor call sites together if the signature changes.
@@ -401,6 +457,7 @@ Current controls:
 - `P`: switch character.
 - `M`: manually switch to the next configured map.
 - `E`: toggle collision checks.
+- `I`: interact with the focused blue object (if a behavior is configured).
 - `Esc`: quit.
 
 Known limitations of the current transition system:
@@ -408,6 +465,6 @@ Known limitations of the current transition system:
 - A missing exit clamps the player's position back inside the screen.
 - Map names are used to resolve destinations and therefore must be unique and match exactly.
 - Destination spawn coordinates must be walkable; otherwise the transition is rejected.
-- The existence of placeholder assets such as `man.png`, `forest.png`, and `forestSEG.png` still needs to be verified in the actual project directory.
+- Assets referenced in `settings.py` must be verified to exist before a map using them is selected (`fro2.png` is a generated test asset to be replaced by a real image).
 
 This document describes the project context based on code and information shared so far. Some recent architecture changes were described in conversation but have not been verified against the user's live files. Before making code changes, inspect the current `main.py`, `settings.py`, `game_map.py`, `world.py`, and `player.py` to confirm they match this description.

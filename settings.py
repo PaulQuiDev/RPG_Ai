@@ -2,6 +2,16 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# Masques SEG de la Forêt (défaut + alternée) et images de fond
+# (défaut + alternée).
+# L'image de fond alternée (fro2.png) est un miroir horizontal de fro1.png,
+# générée à des fins de test du changement d'image — à remplacer par une
+# vraie image quand celle-ci existera.
+FOREST_SEG_DEFAULT = BASE_DIR / "asset/world/fro1SEG.png"
+FOREST_SEG_ALT = BASE_DIR / "asset/world/fro2SEG.png"
+FOREST_BG_DEFAULT = BASE_DIR / "asset/world/fro1.png"
+FOREST_BG_ALT = BASE_DIR / "asset/world/fro2.png"
+
 # Personnages disponibles
 CHARACTERS = [
     {
@@ -34,7 +44,7 @@ MAPS = [
         #   "action"  = clé dans behaviors.BEHAVIORS (comportement custom),
         #               OU "dest" = nom de carte pour un téléport direct.
         "interactions": [
-            # Grand bâtiment (left) -> change de carte vers la Forêt (test).
+            # Grand bâtiment (left) -> change de carte vers la Forêt.
             {"pos": [356, 305], "action": "go_forest"},
         ],
 
@@ -53,8 +63,28 @@ MAPS = [
     },
     {
         "name": "Forêt",
-        "background": BASE_DIR / "asset/world/fro1.png",
-        "mask": BASE_DIR / "asset/world/fro1SEG.png",
+        "background": FOREST_BG_DEFAULT,
+        "mask": FOREST_SEG_DEFAULT,
+
+        # Variantes d'actifs basculables à l'exécution (voir
+        # cycle_map_seg / cycle_map_bg / cycle_map_fg dans behaviors.py).
+        # Chaque liste contient au moins deux chemins ; l'actif courant
+        # est celui de la clé correspondante (mask/background), et le
+        # cycle passe au suivant en boucle.
+        "variants": {
+            "mask": [FOREST_SEG_DEFAULT, FOREST_SEG_ALT],
+            "background": [FOREST_BG_DEFAULT, FOREST_BG_ALT],
+        },
+
+        # Comportements des objets bleus (carte courante) :
+        #   cycle_map_seg : le masque SEG bascule vers la variante suivante
+        #   cycle_map_bg  : l'image de fond bascule vers la variante suivante
+        # Les positions doivent correspondre au centre d'un objet bleu de
+        # la carte (dans INTERACT_MATCH_TOLERANCE).
+        "interactions": [
+            {"pos": [184, 154], "action": "cycle_map_seg"},
+            {"pos": [112, 227], "action": "cycle_map_bg"},
+        ],
 
         "perspective": {
             "enabled": False,
