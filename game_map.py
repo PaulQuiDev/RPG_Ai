@@ -16,18 +16,21 @@ from settings import (
     INTERACT_CONTACT,
     INTERACT_BLUE_THRESHOLD,
     INTERACT_MIN_AREA,
+    INTERACT_MATCH_TOLERANCE,
     FG_MIN_AREA,
 )
 
 
 class GameMap:
     def __init__(self, background_path, mask_path,
-                 foreground_path=None, perspective=None):
+                 foreground_path=None, perspective=None,
+                 interactions=None):
         self.perspective = perspective or {
             "enabled": False,
             "top_scale": 1.0,
             "bottom_scale": 1.0,
         }
+        self.interactions = interactions or []
 
         try:
             original = pygame.image.load(
@@ -135,12 +138,29 @@ class GameMap:
             if el["box"].bottom > py:
                 screen.blit(el["surf"], (el["x0"], el["y0"]))
 
-    def _draw_interaction_layer(self, screen, player, time_ms=0):
-        """Teint bleu + halos agrandis.
+    def get_focused_object(self, player):
+        """Retourne l'objet interactif le plus proche du joueur
+        (dans la portée), ou None s'il n'y en a pas."""
+        if player is None or not self.interact_objects:
+            return None
+        px, py = player.x, player.y
+        best = None
+        best_d = INTERACT_PROXIMITY
+        for obj in self.interact_objects:
+            d = math.hypot(px - obj["box"].centerx,
+                           py - obj["box"].centery)
+            if d < best_d:
+                best_d = d
+                best = obj
+        return best
 
-        Redessé au-dessus du joueur et de la FG pour garantir que la
-        couleur d'interaction reste visible, y compris pour les éléments
-        de premier plan.
+    def _draw_interaction_layer(self, screen, player, time_ms=0):
+        """Teint bleu + halos.
+
+        Seul l'objet le plus proche (dans la portée) CLINOTTE
+        (halo pulsant). Les autres objets en portée ont un halo
+        statique, plus discret. Le teint bleu de base reste
+        toujours visible sur tous les objets.
         """
         screen.blit(self.interact_layer, (0, 0))
 
@@ -149,14 +169,42 @@ class GameMap:
 
         t = time_ms * 0.004
         px, py = player.x, player.y
+        objs = self.interact_objects
 
-        for i, obj in enumerate(self.interact_objects):
-            strength = self._proximity_strength(obj["box"], px, py)
-            if strength <= 0.0:
-                continue
+        # 1) Objet focalisé : le plus proche dans la portée.
+        focus_index = -1
+        focus_d = INTERACT_PROXIMITY
+        for i, obj in enumerate(objs):
+            d = math.hypot(px - obj["box"].centerx,
+                           py - obj["box"].centery)
+            if d < focus_d:
+                focus_d = d
+                focus_index = i
+        if focus_index == -1:
+            return
 
-            pulse = 0.70 + 0.30 * math.sin(t + i * 0.7)
+        # 2) Halo PULSANT (clinotage) pour l'objet focalisé uniquement.
+        focus = objs[focus_index]
+        strength = self._proximity_strength(focus["box"], px, py)
+        if strength > 0.0:
+            pulse = 0.70 + 0.30 * math.sin(t + focus_index * 0.7)
             alpha = round(255 * strength * pulse)
+            if alpha > 0:
+                focus["glow"].set_alpha(alpha)
+                screen.blit(focus["glow"], focus["glow_pos"])
+
+        # 3) Halos STATIQUES (pas de pulsation) pour les autres objets
+        #    présents dans la portée.
+        static_factor = 0.45
+        for i, obj in enumerate(objs):
+            if i == focus_index:
+                continue
+            d = math.hypot(px - obj["box"].centerx,
+                           py - obj["box"].centery)
+            if d >= INTERACT_PROXIMITY:
+                continue
+            strength = self._proximity_strength(obj["box"], px, py)
+            alpha = round(255 * strength * static_factor)
             if alpha > 0:
                 obj["glow"].set_alpha(alpha)
                 screen.blit(obj["glow"], obj["glow_pos"])
@@ -324,7 +372,25 @@ class GameMap:
                     "box": pygame.Rect(x0, y0, bw, bh),
                     "glow": glow,
                     "glow_pos": glow_pos,
+                    "action": None,
+                    "dest": None,
                 })
+
+        # Associer un comportement à chaque objet bleu : le centre de
+        # l'objet le plus proche du "pos" de chaque interaction.
+        for obj in objects:
+            cx, cy = obj["box"].centerx, obj["box"].centery
+            best = None
+            best_d = INTERACT_MATCH_TOLERANCE
+            for inter in self.interactions:
+                ipx, ipy = inter["pos"]
+                d = math.hypot(cx - ipx, cy - ipy)
+                if d < best_d:
+                    best_d = d
+                    best = inter
+            if best is not None:
+                obj["action"] = best.get("action")
+                obj["dest"] = best.get("dest")
 
         return base_layer, objects
 

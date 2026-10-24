@@ -11,6 +11,7 @@ from settings import (
 )
 from player import Player
 from world import World
+from behaviors import BEHAVIORS, go_to_map
 
 
 
@@ -95,6 +96,27 @@ def main():
                     # Le monde gère lui-même le changement de carte.
                     world.next_map(player)
 
+                elif event.key == pygame.K_i:
+                    # Interagir avec l'objet focalisé (le plus proche
+                    # dans la portée).
+                    focus = game_map.get_focused_object(player)
+                    if focus is None:
+                        print("Aucun objet interactif à portée (I).")
+                        continue
+                    if focus.get("action") is not None:
+                        beh = BEHAVIORS.get(focus["action"])
+                        if beh is None:
+                            print(
+                                f"Comportement inconnu : "
+                                f"{focus['action']}"
+                            )
+                            continue
+                        if beh(player, world, game_map):
+                            game_map = world.game_map
+                    elif focus.get("dest") is not None:
+                        if go_to_map(player, world, focus["dest"]):
+                            game_map = world.game_map
+
         # 2. Mise à jour du jeu
         keys = pygame.key.get_pressed()
 
@@ -123,19 +145,28 @@ def main():
         # 4. Affichage des informations
         character_name = CHARACTERS[character_index]["name"]
         map_name = world.current_map_data["name"]
+        focus = game_map.get_focused_object(player)
+
+        if focus is not None:
+            target = focus.get("action") or focus.get("dest")
+            focus_line = f"  -> agir (I) sur : {target}"
+        else:
+            focus_line = None
 
         info = [
             f"Personnage : {character_name} (P pour changer)",
             f"Carte : {map_name} (M pour changer)",
-            "Flèches : déplacer | E : collisions",
+            "Flèches : déplacer | E : collisions | I : interagir",
             (
                 "Collisions : "
                 f"{'ACTIVÉES' if collisions_enabled else 'DÉSACTIVÉES'}"
             ),
-"Objets bleus : interactifs (s'approche : mise en avant)",
+            "Objets bleus : interactifs (I : agir sur le plus proche)",
             "Prémiplan (FG) : devant le joueur derrière un élément",
             "Échap : quitter",
         ]
+        if focus_line is not None:
+            info.insert(len(info) - 1, focus_line)
 
         for i, line in enumerate(info):
             label = font.render(

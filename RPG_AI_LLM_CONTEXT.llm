@@ -248,6 +248,35 @@ Map exits are configured in `settings.py`, not hard-coded into `main.py`. Exampl
 
 Supported edge names in the current implementation are `left`, `right`, `top`, and `bottom`. The destination `map` value must exactly match a map's `name`. `spawn` is a window-coordinate pair and should be walkable on the destination mask. Currently, transitions trigger at screen edges; precise door/rectangle trigger zones have not been implemented yet.
 
+### `behaviors.py`
+
+Defines the registry of simple, per-object behaviors for interactable (blue) objects. Each behavior is a plain function with the signature:
+
+```python
+def <nom>(player, world, game_map) -> bool
+```
+
+It takes the current `Player`, the `World`, and the current `GameMap`, and returns `True` when the behavior successfully applied (e.g. a map change), `False` otherwise.
+
+```python
+BEHAVIORS: dict[str, Callable]  # registered behavior functions
+go_to_map(player, world, name)  # change map by name (case-insensitive)
+go_forest(player, world, game_map)  # test behavior -> Forêt
+```
+
+Interaction configuration lives per-map in `settings.py` under the key `"interactions"` (a list, optional per map). Each entry is:
+
+```python
+{"pos": [x, y], "action": "<behavior_key>"}   # custom behavior from BEHAVIORS
+{"pos": [x, y], "dest": "<map_name>"}        # direct teleport to a map
+```
+
+`"pos"` is the *target* window position whose *closest blue object* gets the behavior. `GameMap._extract_interactables` assigns each behavior to the blue object whose center is within `INTERACT_MATCH_TOLERANCE` pixels of `"pos"` (closest wins). A blue object with no matching interaction gets `action` and `dest` set to `None`.
+
+At runtime `main.py` handles the `I` key: it calls `game_map.get_focused_object(player)` to find the single *closest* in-range interactable, then runs `BEHAVIORS[focus["action"]]` (or `go_to_map(...)` for a `"dest"`). When a map changes, the local `game_map` is refreshed from `world.game_map`.
+
+Visual rule: only the focused (closest in-range) object's glow **pulses/blinks** (`_draw_interaction_layer`); other in-range objects get a dimmer *static* halo. All blue objects keep their constant blue tint.
+
 ### `player.py`
 
 Defines `Player`, responsible for loading and slicing the character sprite sheet, movement, animation, and drawing the current frame.

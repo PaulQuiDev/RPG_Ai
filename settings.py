@@ -29,6 +29,15 @@ MAPS = [
         # Couche de premier plan optionnelle (éléments devant le joueur).
         "foreground": BASE_DIR / "asset/world/vil1FG.png",
 
+        # Comportements des objets bleus :
+        #   "pos"     = centre de l'objet (px, coordonnées fenêtre).
+        #   "action"  = clé dans behaviors.BEHAVIORS (comportement custom),
+        #               OU "dest" = nom de carte pour un téléport direct.
+        "interactions": [
+            # Grand bâtiment (left) -> change de carte vers la Forêt (test).
+            {"pos": [356, 305], "action": "go_forest"},
+        ],
+
         "perspective": {
             "enabled": True,
             "top_scale": 0.70,
@@ -128,10 +137,13 @@ INTERACT_BASE_ALPHA = 30
 INTERACT_GLOW_ALPHA = 100
 INTERACT_GLOW_PAD = 14
 INTERACT_MAX_SCALE = 0.20
-INTERACT_PROXIMITY = 70.0
+INTERACT_PROXIMITY = 80.0
 INTERACT_CONTACT = 45.0
-INTERACT_BLUE_THRESHOLD = 96
+INTERACT_BLUE_THRESHOLD = 100
 INTERACT_MIN_AREA = 100
+# Distance max (px) pour associer un comportement à un objet bleu :
+# le centre de l'objet le plus proche du "pos" de l'interaction.
+INTERACT_MATCH_TOLERANCE = 90.0
 
 # --- Couche de premier plan (FG) ---
 # Surface min de composante FG conservée (filtre le bruit).
