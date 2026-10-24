@@ -135,6 +135,13 @@ MOVE_SPEED = 220
 
 COLLISIONS_ENABLED_DEFAULT = True
 COLLISION_RADIUS = 5
+
+INTERACT_BASE_ALPHA = 110
+INTERACT_GLOW_ALPHA = 180
+INTERACT_GLOW_PAD = 14
+INTERACT_MAX_SCALE = 0.20
+INTERACT_PROXIMITY = 170
+INTERACT_CONTACT = 45
 ```
 
 Direction-to-row mapping:
@@ -166,7 +173,8 @@ Responsibilities:
 - Load the background and collision mask with Pygame.
 - Check that their original dimensions match.
 - Scale them to the game window dimensions.
-- Draw the background.
+- Extract the interactable objects (blue mask pixels) at load time and expose `self.interact_layer` (window-size SRCALPHA surface, constant blue tint over all objects) and `self.interact_objects` (list of `{"box": Rect, "glow": Surface, "glow_pos": (x, y)}`).
+- Draw the background and the interactable layer in `draw(screen, player, time_ms)`: the constant tint is always visible; an enlarged soft glow (with a pulse) is drawn only for objects within `INTERACT_PROXIMITY`, at full strength at contact.
 - Test whether a point is walkable and whether the player's collision area can stand at a given position.
 - Calculate the perspective scale for a player's vertical position using `get_perspective_scale(y)`.
 
@@ -186,6 +194,7 @@ The collision-mask convention is:
 - Green areas represent walkable ground.
 - Non-green areas represent blocked ground.
 - The current point test uses the green channel being greater than the red and blue channels.
+- Blue areas represent interactable objects. They remain non-walkable (blocked); they are only drawn as a blue highlight by `GameMap` (constant tint plus enlarged glow when the player is near or touching them).
 - The mask should have the same source dimensions as its background.
 
 Keep the `can_stand_at` interface consistent with all callers. The code in `main.py` and `player.py` currently calls it with `(x, y, radius)`. A compatible method signature is therefore:
@@ -278,7 +287,7 @@ Current intended controls:
 - `E`: toggle collision checking.
 - `Esc`: quit the game.
 
-When switching maps manually, `main.py` calls `world.next_map(player)`. During normal play, it calls `world.check_transition(player)` and then refreshes `game_map = world.game_map`. When switching characters, it rebuilds the player with the selected full `character_data` entry while preserving the current coordinates.
+When switching maps manually, `main.py` calls `world.next_map(player)`. During normal play, it calls `world.check_transition(player)` and then refreshes `game_map = world.game_map`. When switching characters, it rebuilds the player with the selected full `character_data` entry while preserving the current coordinates. The frame is rendered with `game_map.draw(screen, player, pygame.time.get_ticks())`; the player position and clock time are required for highlighting nearby interactable objects.
 
 The current `main.py` import pattern should be similar to:
 

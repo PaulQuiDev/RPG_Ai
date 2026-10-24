@@ -116,3 +116,17 @@ ANCHOR_OFFSETS = {
     "droite": (0, 0),
     "dos": (0, 0),
 }
+
+# --- Objets interactifs : pixels bleus du masque de collision ---
+# Bleu au masque = objet avec lequel on peut interagir : teint bleu
+# constant (BASE_ALPHA) + halo agrandi quand le joueur s'approche/touche.
+INTERACT_COLOR = (90, 170, 255)
+INTERACT_GLOW_COLOR = (130, 200, 255)
+INTERACT_BASE_ALPHA = 30
+INTERACT_GLOW_ALPHA = 100
+INTERACT_GLOW_PAD = 14
+INTERACT_MAX_SCALE = 0.20
+INTERACT_PROXIMITY = 70.0
+INTERACT_CONTACT = 45.0
+INTERACT_BLUE_THRESHOLD = 96
+INTERACT_MIN_AREA = 100

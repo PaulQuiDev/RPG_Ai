@@ -113,7 +113,7 @@ def main():
         game_map = world.game_map
 
         # 3. Affichage du monde et du personnage
-        game_map.draw(screen)
+        game_map.draw(screen, player, pygame.time.get_ticks())
         player.draw(screen, game_map)
 
         # 4. Affichage des informations
@@ -128,6 +128,7 @@ def main():
                 "Collisions : "
                 f"{'ACTIVÉES' if collisions_enabled else 'DÉSACTIVÉES'}"
             ),
+"Objets bleus : interactifs (s'approche : mise en avant)",
             "Échap : quitter",
         ]
 
