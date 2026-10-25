@@ -67,14 +67,9 @@ RPG_Ai/
   quêtes, combat).
 
 ### 2. Fonctionnalités importantes à ajouter
-- **Combat** : les actifs `bossecombat` / `bossepasscombat` existent dans
-  `asset/world/` mais ne sont ni déclarés dans `MAPS` ni associés à une logique
-  de combat (santé, attaques, IA des ennemis).
 - **IA des ennemis** : les monstres patrouillent seulement ; machine à états.
 - **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des arbres
   de dialogue.
-- **Inventaire / quêtes** : les interactions actuelles ne font que téléporter ou
-  basculer d'actif.
 - **Tests** : ajouter des tests unitaires (mouvement, collision, transitions,
   interactions) — aujourd'hui seulement `smoke_npc.py`.
 - **Debug humain** : permetter de conprendre facilement la situation dans la console position jeur x sconde , voire en transparence la map d'interation et les itbox en générale... flag a ajouter au lencement.
@@ -96,4 +91,9 @@ RPG_Ai/
 - **Sauvegarde / chargement** : aucune persistance d'état pour l'instant.
 - **Pipeline IA pour les assets** : lier la génération Krea2/Qwen au projet
   (validation des sheets, découpe automatique, insertion dans `settings.py`).
-  - **IA des ennemis** :  ajouter santé.
+- **IA des ennemis** :  ajouter santé.
+ - **Inventaire / quêtes** : les interactions actuelles ne font que téléporter ou
+  basculer d'actif.
+- **Combat** : les actifs `bossecombat` / `bossepasscombat` existent dans
+  `asset/world/` mais ne sont ni déclarés dans `MAPS` ni associés à une logique
+  de combat (santé, attaques, IA des ennemis).
