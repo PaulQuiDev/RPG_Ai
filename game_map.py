@@ -98,26 +98,28 @@ class GameMap:
         self.npcs = self._build_npcs()
 
     def draw(self, screen, player=None, collisions=True):
-        """Fond + couche de premier plan DERHIERE le joueur.
+        """Fond + NPC + couche FG derrière le joueur.
 
-        La couche interaction (teint bleu + halo) est redessée plus bas
-        dans draw_top, au-dessus du joueur et de la FG, pour garantir que
-        la couleur d'interaction reste toujours visible.
-        Les NPC derrière le joueur (y <= player.y) sont ici, avant le
-        joueur.
+        Ordre (arrière -> proche) : fond, NPC derrière le joueur
+        (y <= player.y), puis FG derrière (box.bottom <= player.y).
+        La couche interaction (teint bleu + halo) est redessée dans
+        draw_top, au-dessus de tout, pour garantir que la couleur
+        d'interaction reste toujours visible.
         """
         screen.blit(self.background, (0, 0))
-        self._draw_fg_back(screen, player)
         self._draw_npcs(screen, player, front=False)
+        self._draw_fg_back(screen, player)
 
     def draw_top(self, screen, player, time_ms=0, collisions=True):
-        """Éléments de premier plan DEVANT le joueur + couche interaction.
+        """NPC + couche FG devant le joueur + couche interaction.
 
-        Les NPC devant le joueur (y > player.y) sont ici, avant la
-        couche interaction.
+        Les NPC devant le joueur (y > player.y) et la FG devant
+        (box.bottom > player.y) sont ici, devant le joueur ; la couche
+        interaction est au-dessus de tout, pour garantir que la couleur
+        d'interaction reste toujours visible.
         """
-        self._draw_fg_front(screen, player, collisions)
         self._draw_npcs(screen, player, front=True)
+        self._draw_fg_front(screen, player, collisions)
         self._draw_interaction_layer(screen, player, time_ms)
 
     def _draw_fg_back(self, screen, player):
@@ -234,7 +236,8 @@ class GameMap:
         # Vert = zone praticable
         return color.g > color.r and color.g > color.b
 
-    def can_stand_at(self, x, y, radius=5, ignore=None):
+    def can_stand_at(self, x: float, y: float, radius: float = 5.0,
+                     ignore=None) -> bool:
         """Vérifie que le personnage reste dans une zone praticable.
 
         Tient compte du masque de collision et des personnages de la

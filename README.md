@@ -56,15 +56,10 @@ RPG_Ai/
 ### 1. Architecture — dette technique à traiter
 - **Démonolithiser `main.py`** : introduire un objet `Game`/`Scene` avec
   `update(dt)` / `render(screen)` découplés + une machine à états (pause, menus).
-- **Collision par seuil de couleur fragile** : le masque praticable se base sur
-  un seuil de couleur (R < 150). Remplacer par une map de collision **données**
-  (tiles) + outil de calibration, pour ne pas casser la collision si l'art change.
 - **Coupe de sprite 4x3 hardcodée** : `CROP_OFFSETS` / `CROP_SIZE` /
   `ANCHOR_OFFSETS` sont des nombres magiques par personnage. Rendre data-driven
   (config par actif) pour que l'ajout d'un personnage ne demande pas de retouche
-  manuelle.
-- **Pas de gestion d'assets** : centraliser chargement/validation/cache dans un
-  manager d'assets.
+  manuelle. (Besoin d'un interfacte pour trouvet c'est setting ou nouveaux sitemme, génération d'image fluctue leur position )
 - **États mutés en mémoire** : `change_map_asset` / `cycle_map_variant` modifient
   `world.maps` à l'exécution sans persistance — formaliser l'état.
 - **Couplage des systèmes** : ajouter un système d'événements / composants pour
@@ -75,22 +70,30 @@ RPG_Ai/
 - **Combat** : les actifs `bossecombat` / `bossepasscombat` existent dans
   `asset/world/` mais ne sont ni déclarés dans `MAPS` ni associés à une logique
   de combat (santé, attaques, IA des ennemis).
-- **IA des ennemis** : les monstres patrouillent seulement ; ajouter santé,
-  attaque et machine à états.
+- **IA des ennemis** : les monstres patrouillent seulement ; machine à états.
 - **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des arbres
   de dialogue.
 - **Inventaire / quêtes** : les interactions actuelles ne font que téléporter ou
   basculer d'actif.
-- **Sauvegarde / chargement** : aucune persistance d'état pour l'instant.
-- **Pipeline IA pour les assets** : lier la génération Krea2/Qwen au projet
-  (validation des sheets, découpe automatique, insertion dans `settings.py`).
 - **Tests** : ajouter des tests unitaires (mouvement, collision, transitions,
   interactions) — aujourd'hui seulement `smoke_npc.py`.
+- **Debug humain** : permetter de conprendre facilement la situation dans la console position jeur x sconde , voire en transparence la map d'interation et les itbox en générale... flag a ajouter au lencement.
 
 ### 3. Simplifications possibles
-- `Nonranger/gameTest.py` : code legacy (imports obsolètes), inactif → à archiver.
 - Machine à bascule d'actifs (`variants` + `change_map_asset` + `cycle_map_*`) :
   beaucoup de mécanisme pour un prototype → à conserver ou à retirer.
 - Images IA `Nonranger/*.png` non référencées par le jeu → trier / archiver.
 - Constants redondantes (`CHARACTER_SCALE`, `DISPLAY_SCALE`, `MOVE_SPEED`,
   `COLLISION_RADIUS`, déjà définies dans `CHARACTERS`) → consolider.
+- Documentation agentic, si plus presise pour permetter au modle de ne pas avoire besoin de tout le code a chager. Si plus efficae par programme python affin d'obtimiser en contexte. 
+
+  ### a discuter pas certain voire comment faire:
+- **Collision par seuil de couleur fragile** : le masque praticable se base sur
+  un seuil de couleur (R < 150). Remplacer par une map de collision **données**
+  (tiles) + outil de calibration, pour ne pas casser la collision si l'art change.
+- **Pas de gestion d'assets** : centraliser chargement/validation/cache dans un
+  manager d'assets.
+- **Sauvegarde / chargement** : aucune persistance d'état pour l'instant.
+- **Pipeline IA pour les assets** : lier la génération Krea2/Qwen au projet
+  (validation des sheets, découpe automatique, insertion dans `settings.py`).
+  - **IA des ennemis** :  ajouter santé.

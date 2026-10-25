@@ -68,7 +68,14 @@ from sprite_loader import slice_sprite_sheet
 
 
 class Npc:
-    """Personnage de carte (PNG) avec comportement, collision et interaction."""
+    """Personnage de carte (PNG) avec comportement, collision et interaction.
+
+    _SIDESTEP_DELAY : délai (s) pendant lequel le NPC attend calmement
+    quand il est bloqué (joueur/obstacle), avant de tenter de contourner
+    l'obstacle. Ça évite le zigzag de direction quand le joueur bloque.
+    """
+
+    _SIDESTEP_DELAY = 0.6
 
     def __init__(self, data: dict, index: int):
         if "name" not in data:
@@ -127,6 +134,9 @@ class Npc:
         self.interact_cooldown = 0.0
         self.last_player = None
 
+        # Patrouille : délai d'attente (s) quand le NPC est bloqué.
+        self._stuck_time = 0.0
+
         # Halo de contact (pré-rendu, réutilisé à chaque frame).
         self.contact_glow = _make_contact_glow()
 
@@ -140,7 +150,13 @@ class Npc:
             self._patrol(dt, game_map, player)
 
     def _patrol(self, dt: float, game_map, player):
-        """Avance vers le waypoint courant, en boucle fermée."""
+        """Avance vers le waypoint courant, en boucle fermée.
+
+        Bloqué (joueur ou obstacle) : le NPC attend calmement (sans
+        changer de direction) pendant `_SIDESTEP_DELAY`. Ensuite il tente
+        une déviation perpendiculaire pour contourner l'obstacle ; s'il
+        reste bloqué, il s'arrête.
+        """
         target = self.path[self.path_index]
 
         # Atteint : passe au waypoint suivant.
@@ -153,31 +169,46 @@ class Npc:
         d = math.hypot(dx, dy)
         if d <= 0.01:
             self._stop()
+            self._stuck_time = 0.0
             return
 
         ux, uy = dx / d, dy / d
         step = self.speed * dt
 
-        # Déplacements possibles : direct, puis déviations perpendiculaires
-        # (pour contourner un obstacle sans se bloquer indéfiniment).
-        candidates = [
-            (ux * step, uy * step),
-            (-uy * step * 0.7, ux * step * 0.7),
-            (uy * step * 0.7, -ux * step * 0.7),
-        ]
+        # 1) Vers le but.
+        cand_x, cand_y = ux * step, uy * step
+        nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
+        ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+        if not self._is_blocked(nx, ny, game_map, player):
+            self._move_to(nx, ny, cand_x, cand_y, dt)
+            self._stuck_time = 0.0
+            return
 
-        for cand_x, cand_y in candidates:
+        # 2) Bloqué : on attend calmement, sans changer de direction.
+        self._stuck_time += dt
+        if self._stuck_time < self._SIDESTEP_DELAY:
+            self._stop()
+            return
+
+        # 3) Délai écoulé : on tente de contourner (déviations perpendiculaires).
+        self._stuck_time = 0.0
+        for sign in (1.0, -1.0):
+            cand_x = (-uy * sign) * step * 0.7
+            cand_y = (ux * sign) * step * 0.7
             nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
             ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
-            if self._is_blocked(nx, ny, game_map, player):
-                continue
-            self.x, self.y = nx, ny
-            self.moving = True
-            self._set_direction(cand_x, cand_y)
-            self._advance_animation(dt)
-            return
-        # Bloqué par tous les candidats : on attend.
+            if not self._is_blocked(nx, ny, game_map, player):
+                self._move_to(nx, ny, cand_x, cand_y, dt)
+                return
         self._stop()
+
+    def _move_to(self, nx: float, ny: float, move_x: float,
+                 move_y: float, dt: float):
+        """Déplace vers (nx, ny) et met à jour direction + animation."""
+        self.x, self.y = nx, ny
+        self.moving = True
+        self._set_direction(move_x, move_y)
+        self._advance_animation(dt)
 
     def _is_blocked(self, nx, ny, game_map, player):
         # Masque + autres personnages (ignore = pas soi-même).
