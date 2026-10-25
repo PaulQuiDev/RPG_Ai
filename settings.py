@@ -60,6 +60,21 @@ MAPS = [
                 "spawn": (10, 400),
             },
         },
+
+        # Personnages de la carte (NPC) — voir npc.py.
+        #   "static" : reste sur place ; "patrol" : suit la boucle "points".
+        #   "action" : clé de behaviors.BEHAVIORS déclenchée au contact.
+        "npcs": [
+            {"name": "Champignon 1", "sprite": BASE_DIR / "asset/carater/mush1.png", "pos": [400, 430], "message": "Salut !"},
+            {"name": "Champignon 2", "sprite": BASE_DIR / "asset/carater/mush2.png", "pos": [720, 400], "message": "Bonjour."},
+            {"name": "Champignon 3", "sprite": BASE_DIR / "asset/carater/mush3.png", "pos": [680, 450], "message": "Bonsoir."},
+            {"name": "Monstre", "sprite": BASE_DIR / "asset/carater/monster2.png", "behavior": "patrol", "speed": 55, "scale": 0.35,
+             "message": "Grrhh !",
+             "points": [[478, 94], [500, 710]]},
+            {"name": "Champignon errant", "sprite": BASE_DIR / "asset/carater/mush5.png", "behavior": "patrol", "speed": 40, "scale": 0.2,
+             "message": "Hop...",
+             "points": [[53, 380], [900, 360], [900, 500], [30, 505]]},
+        ],
     },
     {
         "name": "Forêt",
@@ -174,6 +189,13 @@ INTERACT_MIN_AREA = 100
 # Distance max (px) pour associer un comportement à un objet bleu :
 # le centre de l'objet le plus proche du "pos" de l'interaction.
 INTERACT_MATCH_TOLERANCE = 90.0
+
+# --- Personnages de carte (NPC) ---
+# Voir npc.py pour le format des dicts de déclaration.
+NPC_DEFAULT_SPEED = 60.0
+NPC_DEFAULT_COLLISION_RADIUS = 5.0
+NPC_CONTACT_RADIUS = 45.0
+NPC_INTERACT_COOLDOWN = 3.0
 
 # --- Couche de premier plan (FG) ---
 # Surface min de composante FG conservée (filtre le bruit).

@@ -24,13 +24,15 @@ from settings import (
 class GameMap:
     def __init__(self, background_path, mask_path,
                  foreground_path=None, perspective=None,
-                 interactions=None):
+                 interactions=None, npcs=None):
         self.perspective = perspective or {
             "enabled": False,
             "top_scale": 1.0,
             "bottom_scale": 1.0,
         }
         self.interactions = interactions or []
+        # Personnage de la carte (NPC) : liste de dicts déclarée dans settings.
+        self.npc_data = list(npcs or [])
 
         try:
             original = pygame.image.load(
@@ -92,19 +94,30 @@ class GameMap:
         # pré-rendus (surface tight, alpha conservé).
         self.fg_elements = self._extract_fg_elements()
 
+        # Personnages de la carte (NPC).
+        self.npcs = self._build_npcs()
+
     def draw(self, screen, player=None, collisions=True):
         """Fond + couche de premier plan DERHIERE le joueur.
 
         La couche interaction (teint bleu + halo) est redessée plus bas
         dans draw_top, au-dessus du joueur et de la FG, pour garantir que
         la couleur d'interaction reste toujours visible.
+        Les NPC derrière le joueur (y <= player.y) sont ici, avant le
+        joueur.
         """
         screen.blit(self.background, (0, 0))
         self._draw_fg_back(screen, player)
+        self._draw_npcs(screen, player, front=False)
 
     def draw_top(self, screen, player, time_ms=0, collisions=True):
-        """Éléments de premier plan DEVANT le joueur + couche interaction."""
+        """Éléments de premier plan DEVANT le joueur + couche interaction.
+
+        Les NPC devant le joueur (y > player.y) sont ici, avant la
+        couche interaction.
+        """
         self._draw_fg_front(screen, player, collisions)
+        self._draw_npcs(screen, player, front=True)
         self._draw_interaction_layer(screen, player, time_ms)
 
     def _draw_fg_back(self, screen, player):
@@ -221,8 +234,26 @@ class GameMap:
         # Vert = zone praticable
         return color.g > color.r and color.g > color.b
 
-    def can_stand_at(self, x, y, radius=5):
-        """Vérifie que le personnage reste dans une zone praticable."""
+    def can_stand_at(self, x, y, radius=5, ignore=None):
+        """Vérifie que le personnage reste dans une zone praticable.
+
+        Tient compte du masque de collision et des personnages de la
+        carte (NPC) : un point est bloqué si le carré de coin touche
+        une zone non praticable ou un NPC (rayon + collision_radius),
+        sauf pour le NPC `ignore` (utilisé quand on déplace l'un
+        d'eux soi-même : construction / patrouille).
+        """
+        # Collisions avec les personnages de la carte (NPC).
+        for npc in self.npcs:
+            if npc is ignore or not npc.collide:
+                continue
+            if math.hypot(
+                x - npc.x,
+                y - npc.y,
+            ) < radius + npc.collision_radius:
+                return False
+
+        # Cornes du carré : zone pratique du masque.
         points = [
             (x - radius, y - radius),
             (x + radius, y - radius),
@@ -234,6 +265,110 @@ class GameMap:
             self.is_walkable(px, py)
             for px, py in points
         )
+
+    def _build_npcs(self):
+        """Construit les personnages de la carte (NPC) depuis
+        self.npc_data.
+
+        Les positions (et waypoints de patrouille) non praticables
+        sont snapées au point praticable le plus proche. Un NPC mal
+        configuré est ignoré (message dans la console).
+        """
+        from npc import Npc
+
+        self.npcs = []
+        for index, data in enumerate(self.npc_data):
+            try:
+                npc = Npc(data, index)
+            except Exception as error:  # noqa: BLE001
+                print(
+                    "NPC ignoré ("
+                    f"index {index} / {data.get('name', '?')}): {error}"
+                )
+                continue
+
+            # Snap de la position initiale vers le point praticable.
+            nx, ny = self.find_nearest_walkable(
+                npc.x, npc.y, npc.collision_radius
+            )
+            npc.x, npc.y = float(nx), float(ny)
+
+            # Snap des waypoints de patrouille vers le point praticable.
+            for i, (px, py) in enumerate(npc.path):
+                if not self.can_stand_at(
+                    px, py, npc.collision_radius, ignore=npc
+                ):
+                    wx, wy = self.find_nearest_walkable(
+                        px, py, npc.collision_radius
+                    )
+                    npc.path[i] = (float(wx), float(wy))
+
+            self.npcs.append(npc)
+        return self.npcs
+
+    def find_nearest_walkable(self, x, y, radius):
+        """Retourne le point praticable le plus proche de (x, y) pour
+        un personnage de `radius`. Cherche en spirale (rangées
+        croissantes de distance). Lève RuntimeError si aucun point
+        n'est trouvé.
+        """
+        x, y = float(x), float(y)
+        if self.can_stand_at(x, y, radius):
+            return int(round(x)), int(round(y))
+
+        max_radius = max(self.width, self.height)
+        for dist in range(10, max_radius + 1, 10):
+            candidates = []
+            for ox in range(-dist, dist + 1, 10):
+                candidates.append((int(x) + ox, int(y) - dist))
+                candidates.append((int(x) + ox, int(y) + dist))
+            for oy in range(-dist + 10, dist, 10):
+                candidates.append((int(x) - dist, int(y) + oy))
+                candidates.append((int(x) + dist, int(y) + oy))
+            for cx, cy in candidates:
+                if self.can_stand_at(cx, cy, radius):
+                    return cx, cy
+        raise RuntimeError(
+            f"Aucun point praticable près de ({x:.0f}, {y:.0f})."
+        )
+
+    def update_npcs(self, dt, player):
+        """Met à jour le comportement de tous les NPC (patrouille)."""
+        for npc in self.npcs:
+            npc.update(dt, self, player)
+
+    def npcs_in_contact(self, player):
+        """Retourne la liste des NPC au contact du joueur (portée)."""
+        if player is None:
+            return []
+        return [n for n in self.npcs if n.in_contact(player)]
+
+    def _draw_npcs(self, screen, player, front):
+        """Rend les NPC avec le bon découpage devant/derrière le joueur.
+
+        front=False : NPC derrière le joueur (y <= player.y).
+        front=True  : NPC devant le joueur (y > player.y).
+        Sans joueur, tous les NPC sont considérés en "arrière".
+        """
+        if not self.npcs:
+            return
+
+        if player is None:
+            threshold = self.height
+        else:
+            threshold = player.y
+
+        to_draw = []
+        for npc in self.npcs:
+            if not front:
+                if npc.y <= threshold:
+                    to_draw.append(npc)
+            else:
+                if npc.y > threshold:
+                    to_draw.append(npc)
+        to_draw.sort(key=lambda n: n.y)
+        for npc in to_draw:
+            npc.draw(screen, self, player)
 
     def get_perspective_scale(self, y):
         perspective = self.perspective

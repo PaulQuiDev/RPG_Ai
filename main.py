@@ -122,6 +122,9 @@ def main():
 
         game_map = world.game_map
 
+        # Personnage (NPC) de la carte : déplacement (patrouille).
+        game_map.update_npcs(dt, player)
+
         player.update(
             dt,
             keys,
@@ -133,6 +136,14 @@ def main():
 
         # Récupérer la carte après une éventuelle transition.
         game_map = world.game_map
+
+        # Interaction des NPC au contact : message par défaut + éventuel
+        # comportement custom (behaviors.BEHAVIORS) déclenché automatiquement.
+        for npc in game_map.npcs_in_contact(player):
+            if npc.can_interact():
+                if npc.interact(player, world, game_map):
+                    # Le comportement a changé de carte (ex : go_forest).
+                    game_map = world.game_map
 
         # 3. Affichage du monde et du personnage
         # Fond + FG derrière le joueur, puis le joueur, puis
@@ -153,6 +164,12 @@ def main():
         else:
             focus_line = None
 
+        # Premier NPC au contact du joueur (pour l'information).
+        npc_in_contact = None
+        for npc in game_map.npcs_in_contact(player):
+            npc_in_contact = npc
+            break
+
         info = [
             f"Personnage : {character_name} (P pour changer)",
             f"Carte : {map_name} (M pour changer)",
@@ -161,10 +178,25 @@ def main():
                 "Collisions : "
                 f"{'ACTIVÉES' if collisions_enabled else 'DÉSACTIVÉES'}"
             ),
+            f"Personnages : {len(game_map.npcs)} sur cette carte",
             "Objets bleus : interactifs (I : agir sur le plus proche)",
             "Prémiplan (FG) : devant le joueur derrière un élément",
             "Échap : quitter",
         ]
+
+        if npc_in_contact is not None:
+            if npc_in_contact.can_interact():
+                npc_line = (
+                    f"  -> contact avec : {npc_in_contact.name} "
+                    "(message affiché automatiquement)"
+                )
+            else:
+                npc_line = (
+                    f"  -> en contact : {npc_in_contact.name} "
+                    f"(cooldown {npc_in_contact.interact_cooldown:.1f}s)"
+                )
+            info.insert(len(info) - 1, npc_line)
+
         if focus_line is not None:
             info.insert(len(info) - 1, focus_line)
 

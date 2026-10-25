@@ -29,7 +29,7 @@ class World:
         return self.maps[self.map_index]
 
     def _load_map(self, index):
-        """Charge une carte et ses paramètres."""
+        """Chargement d'une carte (fonctionne hors jeu, pour le test)."""
         data = self.maps[index]
 
         return GameMap(
@@ -38,6 +38,7 @@ class World:
             data.get("foreground"),
             data.get("perspective"),
             data.get("interactions"),
+            data.get("npcs"),
         )
 
     def find_spawn(self, game_map, radius=COLLISION_RADIUS):
@@ -93,11 +94,19 @@ class World:
 
             if not new_map.can_stand_at(spawn_x, spawn_y, radius):
                 print(
-                    "Point d'arrivée inaccessible : "
-                    f"{self.maps[destination_index]['name']} "
-                    f"({spawn_x}, {spawn_y})"
+                    f"Point d'arrivée bloqué : {self.maps[destination_index]['name']} "
+                    f"({spawn_x}, {spawn_y}) — recherche d'un point alternatif."
                 )
-                return False
+                # Fallback : point praticable le plus proche (gère les cas où
+                # le spawn collé à un NPC serait bloqué).
+                spawn_x, spawn_y = self.find_spawn(new_map, radius)
+                if not new_map.can_stand_at(spawn_x, spawn_y, radius):
+                    print(
+                        f"Point d'arrivée inaccessible : "
+                        f"{self.maps[destination_index]['name']} "
+                        f"({spawn_x}, {spawn_y})"
+                    )
+                    return False
 
         except (RuntimeError, ValueError, KeyError, IndexError) as error:
             print(f"Changement de carte impossible : {error}")
