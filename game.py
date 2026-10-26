@@ -33,7 +33,19 @@ class Game:
         maps,
         collisions_enabled=COLLISIONS_ENABLED_DEFAULT,
         character_index=0,
+        world=None,
     ):
+        """
+        Args:
+            screen: Surface pygame de jeu.
+            font: Font pygame pour le HUD.
+            characters: Liste des dict de personnages (settings.CHARACTERS).
+            maps: Liste des dict de cartes (settings.MAPS).
+            collisions_enabled: Brouille des collisions (E).
+            character_index: Index du personnage initial.
+            world: Optionnel — monde déjà construit (injection de dépendance,
+                test). Si `None`, on en construit un à partir de `maps`.
+        """
         self.screen = screen
         self.font = font
         self.characters = characters
@@ -41,8 +53,8 @@ class Game:
         self.collisions_enabled = collisions_enabled
         self.state = GameState.RUNNING
 
-        # Le monde gère les cartes et leurs connexions.
-        self.world = World(maps)
+        # Le monde : injecté (test) ou construit depuis `maps`.
+        self.world = world if world is not None else World(maps)
         self.game_map = self.world.game_map
         spawn_x, spawn_y = self.world.find_spawn(self.game_map)
         self.player = Player(spawn_x, spawn_y, characters[character_index])
@@ -112,16 +124,39 @@ class Game:
         if focus is None:
             print("Aucun objet interactif à portée (I).")
             return
+
+        interaction = focus.get("interaction") or {}
+
+        # Préconditions (quêtes) : sans elles, l'action est bloquée.
+        if not self.world.condition_holds(
+            interaction.get("requires"), self.player
+        ):
+            print("Action indisponible : conditions non remplies.")
+            return
+
+        applied = False
         if focus.get("action") is not None:
             beh = BEHAVIORS.get(focus["action"])
             if beh is None:
                 print(f"Comportement inconnu : {focus['action']}")
                 return
-            if beh(self.player, self.world, self.game_map):
-                self.game_map = self.world.game_map
+            applied = bool(beh(self.player, self.world, self.game_map))
         elif focus.get("dest") is not None:
-            if go_to_map(self.player, self.world, focus["dest"]):
-                self.game_map = self.world.game_map
+            applied = bool(
+                go_to_map(self.player, self.world, focus["dest"])
+            )
+
+        if not applied:
+            return
+
+        self.game_map = self.world.game_map
+
+        # Drapeau global à poser après la réussite (déclaratif).
+        flag_name = interaction.get("flag")
+        if flag_name is not None:
+            self.world.flag_set(
+                flag_name, interaction.get("flag_value", True)
+            )
 
     # -- Mise à jour ------------------------------------------------------------
 

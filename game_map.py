@@ -512,6 +512,7 @@ class GameMap:
                     "glow_pos": glow_pos,
                     "action": None,
                     "dest": None,
+                    "interaction": None,
                 })
 
         # Associer un comportement à chaque objet bleu : le centre de
@@ -529,6 +530,7 @@ class GameMap:
             if best is not None:
                 obj["action"] = best.get("action")
                 obj["dest"] = best.get("dest")
+                obj["interaction"] = dict(best)
 
         return base_layer, objects
 

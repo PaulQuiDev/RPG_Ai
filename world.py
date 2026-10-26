@@ -23,6 +23,12 @@ class World:
         self.maps = maps
         self.map_index = 0
         self.game_map = self._load_map(0)
+        # --- État global (quêtes) ---
+        # Drapeaux booléens nommés, partagés entre toutes les cartes.
+        self.flags = {}
+        # Conditions nommées : nom -> fn(world, player) -> bool.
+        # Évaluées au moment où une transition/interaction les demande.
+        self.conditions = {}
 
     @property
     def current_map_data(self):
@@ -73,6 +79,64 @@ class World:
         raise RuntimeError(
             f"Aucune position accessible sur {self.maps[self.map_index]['name']}."
         )
+
+    # --- API d'état global (quêtes) : drapeaux + conditions ---
+    def flag_set(self, name, value=True):
+        """Déclare un drapeau global du jeu (état de la quête)."""
+        self.flags[str(name)] = bool(value)
+
+    def flag_get(self, name, default=False):
+        """Valeur d'un drapeau (default si absent)."""
+        return self.flags.get(str(name), default)
+
+    def flag_reset(self, name=None):
+        """Efface un drapeau (ou tous, si name est None)."""
+        if name is None:
+            self.flags.clear()
+        else:
+            self.flags.pop(str(name), None)
+
+    def register_condition(self, name, fn):
+        """Nomme une condition `fn(world, player) -> bool`."""
+        self.conditions[str(name)] = fn
+
+    def flag_condition(self, name, value=True):
+        """Condition « le drapeau `name` vaut `value` » (retourne une fn).
+
+        Un drapeau non défini est **non satisfait** (retourne False) —
+        fail-closed, cohérent avec une condition inconnue.
+        """
+        def fn(world, player):
+            if name not in world.flags:
+                return False
+            return world.flags[name] == value
+        return fn
+
+    def condition_holds(self, names, player=None):
+        """Vrai si TOUTES les conditions de `names` sont remplies.
+
+        `names` : None ou liste vide => True (pas de précondition).
+        Une condition inconnue ou qui lève une erreur est **bloquante**
+        (retourne False) et signalée dans la console (fail-closed).
+        """
+        if not names:
+            return True
+        for name in names:
+            if not self._one_condition(name, player):
+                return False
+        return True
+
+    def _one_condition(self, name, player):
+        """Évalue une seule condition ; inconnue/erroneuse => False (bloquant)."""
+        fn = self.conditions.get(str(name))
+        if fn is None:
+            print(f"Condition inconnue « {name} » — action/transition bloquée.")
+            return False
+        try:
+            return bool(fn(self, player))
+        except Exception as error:  # noqa: BLE001
+            print(f"Condition « {name} » a lev\u00e9 : {error}")
+            return False
 
     def change_map(self, destination_index, player, spawn=None):
         """Change de carte. Si aucun point d'arrivée n'est donné,
@@ -163,6 +227,13 @@ class World:
 
         if destination_index is None:
             print(f"Carte inconnue : {destination_name}")
+            return False
+
+        # Préconditions (quêtes) : sans elles, la transition est bloquée.
+        # Le joueur reste au bord (la collision l'y maintient) ; on ne
+        # change ni de carte ni de position — la collision le retient.
+        if not self.condition_holds(exit_data.get("requires"), player):
+            print(f"Transition bloquée ({side}) : conditions non remplies.")
             return False
 
         old_name = self.current_map_data["name"]
