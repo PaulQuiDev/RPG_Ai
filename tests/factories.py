@@ -53,15 +53,6 @@ def build_fake_world(tmp_dir, maps):
     return World(maps)
 
 
-def build_fake_one_world(tmp_dir, blocked=(), blue=(), name="Map A"):
-    bg = _write(make_fake_background(), tmp_dir, "bg_a.png")
-    mask = _write(make_fake_mask(blocked, blue), tmp_dir, "mask_a.png")
-    return build_fake_world(tmp_dir, [{
-        "name": name,
-        "background": bg,
-        "mask": mask,
-    }])
-
 
 def build_fake_two_worlds(tmp_dir, name_a="Map A", name_b="Map B",
                           blocked_a=(), blue_a=(), blocked_b=(), blue_b=()):
@@ -84,6 +75,31 @@ def build_fake_two_worlds(tmp_dir, name_a="Map A", name_b="Map B",
             "exits": {"left": {"map": name_a, "spawn": [100, 360]}},
         },
     ])
+
+
+def write_fake_fg(tmp_dir, blobs=()):
+    """Couche de premier plan (SRCALPHA) avec des blobs RGBA.
+
+    blobs : liste de (x, y, w, h, rgba).
+    """
+    surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    surf.fill((0, 0, 0, 0))
+    for x, y, w, h, rgba in blobs:
+        b = pygame.Surface((w, h), pygame.SRCALPHA)
+        b.fill(rgba)
+        surf.blit(b, (x, y))
+    return _write(surf, tmp_dir, "fg.png")
+
+
+def build_fake_one_world(tmp_dir, blocked=(), blue=(), name="Map A",
+                         fg=False, fg_blobs=()):
+    """Une carte (optionnel : couche de premier plan)."""
+    bg = _write(make_fake_background(), tmp_dir, "bg_a.png")
+    mask = _write(make_fake_mask(blocked, blue), tmp_dir, "mask_a.png")
+    m = {"name": name, "background": bg, "mask": mask}
+    if fg:
+        m["foreground"] = write_fake_fg(tmp_dir, fg_blobs)
+    return build_fake_world(tmp_dir, [m])
 
 
 def fake_npc_data(tmp_dir, sheet_path, name="NPC", behavior="static",
