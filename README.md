@@ -70,8 +70,9 @@ RPG_Ai/
 - **IA des ennemis** : les monstres patrouillent seulement ; machine à états.
 - **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des arbres
   de dialogue.
-- **Tests** : ajouter des tests unitaires (mouvement, collision, transitions,
-  interactions) — aujourd'hui seulement `smoke_npc.py`.
+- **Tests** : ✅ fait — suite unittest complète (`tests/`, 85 tests :
+  mouvement, collision, transitions, interactions, intégration
+  Village↔Forêt sur les assets réels). Filet en place avant la refactoring §1.
 - **Debug humain** : permetter de conprendre facilement la situation dans la console position jeur x sconde , voire en transparence la map d'interation et les itbox en générale... flag a ajouter au lencement.
 
 ### 3. Simplifications possibles
@@ -81,6 +82,14 @@ RPG_Ai/
 - Constants redondantes (`CHARACTER_SCALE`, `DISPLAY_SCALE`, `MOVE_SPEED`,
   `COLLISION_RADIUS`, déjà définies dans `CHARACTERS`) → consolider.
 - Documentation agentic, si plus presise pour permetter au modle de ne pas avoire besoin de tout le code a chager. Si plus efficae par programme python affin d'obtimiser en contexte. 
+
+  ### Remarques / à investiguer (pas encore traité)
+- **Position de spawn des NPC non praticable** : tous les NPC du Village sont
+  placés sur un pixel `walkable=True` mais où le corps (rayon) emporte un
+  bâtiment (`can_stand_at=False`). Conséquence : le joueur ne peut pas se
+  positionner exactement dessus et l'image du NPC chevauche le bâtiment.
+  À traiter par données (réajuster les positions dans `settings.MAPS`) ;
+  pas de correction côté code.
 
   ### a discuter pas certain voire comment faire:
 - **Collision par seuil de couleur fragile** : le masque praticable se base sur
