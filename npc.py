@@ -16,9 +16,17 @@ Déclarés dans settings.py, dans la liste "npcs" de chaque carte :
             "scale": float,                  # échelle (défaut CHARACTER_SCALE)
             "collision_radius": float,       # rayon de collision (défaut NPC_DEFAULT_COLLISION_RADIUS)
             "collide": bool,                 # True = bloque le joueur (défaut True)
+            "crop_size":      {direction: {col: (w, h)}},    # override de découpe (opt, défaut CROP_SIZE)
+            "crop_offsets":   {direction: {col: (dx, dy)}},  # override d'offset (opt, défaut CROP_OFFSETS)
+            "anchor_offsets": {direction: (dx, dy)},         # override de l'anchor (opt, défaut ANCHOR_OFFSETS)
         },
         ...
     ]
+
+    La découpe est data-driven : un champ de découpe absent garde le défaut
+    global (settings.CROP_SIZE / CROP_OFFSETS / ANCHOR_OFFSETS). Ajouter un
+    personnage (joueur dans CHARACTERS ou npc ici) ne demande donc qu'une
+    ligne — jamais une retouche du code de découpe.
 
 Comportements :
     - "static" : le personnage reste sur place (animation d'attente).
@@ -53,7 +61,6 @@ import pygame
 from settings import (
     ANIMATION,
     ANIMATION_FPS,
-    ANCHOR_OFFSETS,
     CHARACTER_SCALE,
     IDLE_COL,
     INTERACT_GLOW_ALPHA,
@@ -64,7 +71,7 @@ from settings import (
     NPC_INTERACT_COOLDOWN,
     SPRITE_SCALE,
 )
-from sprite_loader import slice_sprite_sheet
+from sprite_loader import resolve_crop_config, slice_sprite_sheet
 
 
 class Npc:
@@ -111,10 +118,17 @@ class Npc:
         self.message = data.get("message")
         self.base_scale = SPRITE_SCALE * self.scale
 
+        # Config de découpe résolue (override par personnage + défauts).
+        self.crop_size, self.crop_offsets, self.anchor_offsets = (
+            resolve_crop_config(data)
+        )
+
         # Chargement du sheet (format 4x3, identique au joueur).
         sheet = pygame.image.load(str(self.sprite_path)).convert_alpha()
         sheet_w, sheet_h = sheet.get_size()
-        self.frames = slice_sprite_sheet(sheet, sheet_w, sheet_h)
+        self.frames = slice_sprite_sheet(
+            sheet, sheet_w, sheet_h, self.crop_size, self.crop_offsets
+        )
 
         # Position des pieds (réécrite par la carte, snapée au point praticable).
         self.x = float(pos[0])
@@ -310,7 +324,7 @@ class Npc:
 
         x = round(self.x - w / 2)
         y = round(self.y - h)
-        ax, ay = ANCHOR_OFFSETS.get(self.direction, (0, 0))
+        ax, ay = self.anchor_offsets.get(self.direction, (0, 0))
         x += round(ax * final_scale)
         y += round(ay * final_scale)
 

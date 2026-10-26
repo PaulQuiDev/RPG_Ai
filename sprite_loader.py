@@ -1,30 +1,99 @@
-"""Découpe générique des sheets de personnages 4x3 (RGB).
+"""Découpe générique des sheets de personnages (RGB).
 
 Une seule source de vérité, partagée par Player (player.py) et Npc (npc.py)
 pour le découpage des frames, les découpes personnalisées (offsets/tailles)
 et le blit vers les surfaces de sortie transparentes.
+
+Config de découpe par personnage (data-driven)
+----------------------------------------------
+
+Chaque personnage (un dict de `CHARACTERS` dans settings.py, ou un dict
+« npc » dans la liste `npcs` d'une carte) peut fournir des clés optionnelles
+de la même forme que les defaults globaux :
+
+    "crop_size"      : {direction: {col: (w, h)}}
+    "crop_offsets"   : {direction: {col: (dx, dy)}}
+    "anchor_offsets" : {direction: (dx, dy)}
+
+Chaque champ absent garde le défaut global (`CROP_SIZE` / `CROP_OFFSETS` /
+`ANCHOR_OFFSETS`). L'ajout d'un personnage ne demande donc qu'une ligne
+(nom + sprite, + éventuellement ces overrides) — aucune retouche du code
+de découpe.
 """
 
 import pygame
 
 from settings import (
     COLS,
-    CROP_OFFSETS,
-    CROP_SIZE,
-    DIRECTIONS,
     ROWS,
+    DIRECTIONS,
+    CROP_SIZE,
+    CROP_OFFSETS,
+    ANCHOR_OFFSETS,
 )
 
 
-def slice_sprite_sheet(sheet, sheet_w, sheet_h):
-    """Découpe une sheet 4x3 en frames par direction.
+def resolve_crop_config(character_data):
+    """Renvoie la config de découpe résolue pour un personnage.
 
-    Renvoie {direction: [frame_0, frame_1, frame_2]} selon le format
-    DIRECTIONS (face/gauche/droite/dos) et la grille ROWS x COLS.
+    Priorité : override par personnage > défaut global (settings).
+
+    Renvoie un 3-tuple :
+        crop_size     : {direction: {col: (w, h) | None}}
+        crop_offsets  : {direction: {col: (dx, dy) | None}}
+        anchor_offsets: {direction: (dx, dy)}
+
+    Une valeur `None` dans `crop_size`/`crop_offsets` signale « pas de
+    valeur » : le découpeur retombe alors sur la taille réelle de la
+    cellule (le sheet est plus petit, ou le champ est volontairement
+    absent).
+    """
+    per_char_size = character_data.get("crop_size", {})
+    per_char_offsets = character_data.get("crop_offsets", {})
+    per_char_anchor = character_data.get("anchor_offsets", {})
+
+    crop_size = {}
+    for direction in DIRECTIONS:
+        per_direction = per_char_size.get(direction, {})
+        crop_size[direction] = {
+            col: per_direction.get(col, CROP_SIZE[direction].get(col))
+            for col in range(COLS)
+        }
+    crop_offsets = {}
+    for direction in DIRECTIONS:
+        per_direction = per_char_offsets.get(direction, {})
+        crop_offsets[direction] = {
+            col: per_direction.get(col, CROP_OFFSETS[direction].get(col))
+            for col in range(COLS)
+        }
+    anchor_offsets = {
+        direction: per_char_anchor.get(direction, ANCHOR_OFFSETS[direction])
+        for direction in DIRECTIONS
+    }
+    return crop_size, crop_offsets, anchor_offsets
+
+
+def slice_sprite_sheet(sheet, sheet_w, sheet_h, crop_size=None,
+                       crop_offsets=None):
+    """Découpe une sheet (grille ROWS x COLS) en frames par direction.
+
+    Renvoie `{direction: [frame_0, frame_1, frame_2]}` selon le format
+    `DIRECTIONS` et la grille `ROWS x COLS`.
 
     Identique au découpage historique de Player, mais fonction module
     réutilisable par tout personnage (joueur ou NPC).
+
+    crop_size / crop_offsets :
+        Config résolues pour un personnage (voir `resolve_crop_config`),
+        ou `None` pour utiliser les defaults globaux (`CROP_SIZE` /
+        `CROP_OFFSETS`). Rétrocompatible : les appels sans args ne
+        changent rien.
     """
+    if crop_size is None:
+        crop_size = CROP_SIZE
+    if crop_offsets is None:
+        crop_offsets = CROP_OFFSETS
+
     sprites = {}
 
     for direction, row in DIRECTIONS.items():
@@ -41,7 +110,7 @@ def slice_sprite_sheet(sheet, sheet_w, sheet_h):
             cell_h = y1 - y0
 
             # Taille spécifique de la découpe.
-            custom_size = CROP_SIZE[direction].get(col)
+            custom_size = crop_size[direction].get(col)
 
             if custom_size is None:
                 crop_w, crop_h = cell_w, cell_h
@@ -57,7 +126,7 @@ def slice_sprite_sheet(sheet, sheet_w, sheet_h):
             crop_y = center_y - crop_h // 2
 
             # Ajouter les offsets personnalisés.
-            dx, dy = CROP_OFFSETS[direction].get(col, (0, 0))
+            dx, dy = crop_offsets[direction].get(col, (0, 0))
             crop_x += dx
             crop_y += dy
 

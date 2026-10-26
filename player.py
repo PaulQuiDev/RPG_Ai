@@ -2,19 +2,14 @@
 import pygame
 
 from settings import (
-    ROWS,
-    COLS,
     IDLE_COL,
     ANIMATION_FPS,
     SPRITE_SCALE,
-    DIRECTIONS,
     ANIMATION,
-    CROP_OFFSETS,
-    CROP_SIZE,
-    ANCHOR_OFFSETS,
     WINDOW_WIDTH,
     WINDOW_HEIGHT,
 )
+from sprite_loader import resolve_crop_config, slice_sprite_sheet
 
 
 class Player:
@@ -29,6 +24,12 @@ class Player:
         self.speed = character_data.get("speed", 220)
         self.collision_radius = character_data.get(
             "collision_radius", 5
+        )
+
+        # Config de découpe résolue : override par personnage (data-driven)
+        # + défauts globaux. Le blit et l'anchor en utilisent.
+        self.crop_size, self.crop_offsets, self.anchor_offsets = (
+            resolve_crop_config(character_data)
         )
 
         try:
@@ -46,7 +47,13 @@ class Player:
 
         # Les images sont découpées à leur taille de référence.
         # Leur échelle finale sera appliquée au moment du dessin.
-        self.sprites = self._load_sprites(sheet, sheet_w, sheet_h)
+        self.sprites = slice_sprite_sheet(
+            sheet,
+            sheet_w,
+            sheet_h,
+            self.crop_size,
+            self.crop_offsets,
+        )
 
         self.x = float(x)
         self.y = float(y)
@@ -56,65 +63,6 @@ class Player:
         self.anim_timer = 0.0
         self.moving = False
 
-    def _load_sprites(self, sheet, sheet_w, sheet_h):
-        sprites = {}
-
-        for direction, row in DIRECTIONS.items():
-            sprites[direction] = []
-
-            for col in range(COLS):
-                x0 = col * sheet_w // COLS
-                x1 = (col + 1) * sheet_w // COLS
-                y0 = row * sheet_h // ROWS
-                y1 = (row + 1) * sheet_h // ROWS
-
-                cell_w = x1 - x0
-                cell_h = y1 - y0
-
-                crop_w, crop_h = CROP_SIZE[direction].get(
-                    col, (cell_w, cell_h)
-                )
-
-                center_x = (x0 + x1) // 2
-                center_y = (y0 + y1) // 2
-
-                dx, dy = CROP_OFFSETS[direction].get(
-                    col, (0, 0)
-                )
-
-                crop_x = center_x - crop_w // 2 + dx
-                crop_y = center_y - crop_h // 2 + dy
-
-                frame = pygame.Surface(
-                    (crop_w, crop_h),
-                    pygame.SRCALPHA,
-                )
-
-                src_left = max(0, crop_x)
-                src_top = max(0, crop_y)
-                src_right = min(sheet_w, crop_x + crop_w)
-                src_bottom = min(sheet_h, crop_y + crop_h)
-
-                if src_right > src_left and src_bottom > src_top:
-                    source_rect = pygame.Rect(
-                        src_left,
-                        src_top,
-                        src_right - src_left,
-                        src_bottom - src_top,
-                    )
-
-                    target_rect = pygame.Rect(
-                        src_left - crop_x,
-                        src_top - crop_y,
-                        source_rect.width,
-                        source_rect.height,
-                    )
-
-                    frame.blit(sheet, target_rect, source_rect)
-
-                sprites[direction].append(frame)
-
-        return sprites
 
     def update(self, dt, keys, game_map, collisions_enabled):
         move_x = 0
@@ -203,7 +151,7 @@ class Player:
         sprite_x = round(self.x - sprite.get_width() / 2)
         sprite_y = round(self.y - sprite.get_height())
 
-        anchor_x, anchor_y = ANCHOR_OFFSETS[self.direction]
+        anchor_x, anchor_y = self.anchor_offsets[self.direction]
         sprite_x += round(anchor_x * final_scale)
         sprite_y += round(anchor_y * final_scale)
 
