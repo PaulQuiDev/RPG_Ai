@@ -160,8 +160,53 @@ class Npc:
         """Met à jour le comportement et le cooldown d'interaction."""
         self.last_player = player
         self.interact_cooldown = max(0.0, self.interact_cooldown - dt)
-        if self.behavior == "patrol" and self.path:
+        if self.behavior == "flee":
+            self._flee(dt, game_map, player)
+        elif self.behavior == "patrol" and self.path:
             self._patrol(dt, game_map, player)
+
+    def _flee(self, dt: float, game_map, player):
+        """Fuite du joueur : s'éloigne au plus vite, en contournant les
+        obstacles (même logique que la patrouille : si bloqué, on contourne
+        avec une déviation perpendiculaire ; sinon on s'arrête)."""
+        if player is None:
+            self._stop()
+            return
+        # Direction de fuite = opposée au joueur.
+        dx = self.x - player.x
+        dy = self.y - player.y
+        d = math.hypot(dx, dy)
+        if d < 2.0:
+            # Le joueur est dessus : on s'éloigne perpendiculairement.
+            ux = -dy / max(d, 1.0)
+            uy = dx / max(d, 1.0)
+            step = self.speed * dt
+            cand_x, cand_y = ux * step, uy * step
+            nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
+            ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+            if not self._is_blocked(nx, ny, game_map, player):
+                self._move_to(nx, ny, cand_x, cand_y, dt)
+            else:
+                self._stop()
+            return
+        ux, uy = dx / d, dy / d
+        step = self.speed * dt
+        cand_x, cand_y = ux * step, uy * step
+        nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
+        ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+        if not self._is_blocked(nx, ny, game_map, player):
+            self._move_to(nx, ny, cand_x, cand_y, dt)
+            return
+        # Bloqué : on tente de contourner (perpendiculaires).
+        for sign in (1.0, -1.0):
+            cand_x = (-uy * sign) * step * 0.7
+            cand_y = (ux * sign) * step * 0.7
+            nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
+            ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+            if not self._is_blocked(nx, ny, game_map, player):
+                self._move_to(nx, ny, cand_x, cand_y, dt)
+                return
+        self._stop()
 
     def _patrol(self, dt: float, game_map, player):
         """Avance vers le waypoint courant, en boucle fermée.
@@ -255,6 +300,24 @@ class Npc:
 
     def _stop(self):
         self.moving = False
+        self.anim_index = 0
+        self.anim_timer = 0.0
+
+    def set_sprite(self, sprite_path):
+        """Change la feuille de sprites (transforme l'apparence, ex.
+        monster.png -> monster2.png). Les offsets de crop sont conservés
+        (même format 4x3 que les autres sprites du projet)."""
+        self.sprite_path = sprite_path
+        try:
+            sheet = pygame.image.load(str(sprite_path)).convert_alpha()
+        except (pygame.error, FileNotFoundError) as error:
+            raise RuntimeError(
+                f"Impossible de charger la feuille de {self.name} : {sprite_path}\n{error}"
+            ) from error
+        sheet_w, sheet_h = sheet.get_size()
+        self.frames = slice_sprite_sheet(
+            sheet, sheet_w, sheet_h, self.crop_size, self.crop_offsets
+        )
         self.anim_index = 0
         self.anim_timer = 0.0
 

@@ -65,10 +65,10 @@ MAPS = [
         #   "static" : reste sur place ; "patrol" : suit la boucle "points".
         #   "action" : clé de behaviors.BEHAVIORS déclenchée au contact.
         "npcs": [
-            {"name": "Champignon 1", "sprite": BASE_DIR / "asset/carater/mush1.png", "pos": [400, 430], "message": "Salut !"},
-            {"name": "Champignon 2", "sprite": BASE_DIR / "asset/carater/mush2.png", "pos": [720, 400], "message": "Bonjour."},
+            {"name": "Champignon 1", "sprite": BASE_DIR / "asset/carater/mush1.png", "pos": [400, 430], "message": "Un monstre est enfermé dans la maison en forêt, à droite. Fais attention, il te fonce dessus."},
+            {"name": "Champignon 2", "sprite": BASE_DIR / "asset/carater/mush2.png", "pos": [720, 400], "message": "Pour ouvrir la maison : le pilier en haut à gauche de la forêt (SEG 2). Ça ouvre le chemin vers le bord droit."},
             {"name": "Champignon 3", "sprite": BASE_DIR / "asset/carater/mush3.png", "pos": [680, 450], "message": "Bonsoir."},
-            {"name": "Monstre", "sprite": BASE_DIR / "asset/carater/monster2.png", "behavior": "patrol", "speed": 55, "scale": 0.35,
+            {"name": "Monstre", "sprite": BASE_DIR / "asset/carater/monster.png", "behavior": "patrol", "speed": 55, "scale": 0.35,
              "message": "Grrhh !",
              "points": [[478, 94], [500, 710]]},
             {"name": "Champignon errant", "sprite": BASE_DIR / "asset/carater/mush5.png", "behavior": "patrol", "speed": 40, "scale": 0.2,
@@ -107,6 +107,75 @@ MAPS = [
             "bottom_scale": 1.00,
         },
 
+        "exits": {
+            "left": {
+                "map": "Village",
+                "spawn": (950, 437),
+            },
+            "right": {
+                "map": "Boss Combat",
+                "spawn": (500, 370),
+            },
+        },
+    },
+    {
+        "name": "Boss Combat",
+        "background": BASE_DIR / "asset/world/bossecombat.png",
+        "mask": BASE_DIR / "asset/world/bossecombatSEG.png",
+
+        # Les 5 bougies (centre de la pièce). Activer chaque bougie
+        # (action "light_candle", traitée dans game.py) fait progresser
+        # le combat ; les 5 allumées -> le monstre meurt et on bascule
+        # sur la carte "Post Combat".
+        "interactions": [
+            {"pos": [506, 224], "action": "light_candle"},
+            {"pos": [649, 325], "action": "light_candle"},
+            {"pos": [348, 330], "action": "light_candle"},
+            {"pos": [597, 495], "action": "light_candle"},
+            {"pos": [402, 498], "action": "light_candle"},
+        ],
+
+        "perspective": {
+            "enabled": False,
+            "top_scale": 1.00,
+            "bottom_scale": 1.00,
+        },
+
+        # Sortie vers la forêt (échappatoire si le combat n'est pas fini).
+        "exits": {
+            "left": {
+                "map": "Forêt",
+                "spawn": (800, 360),
+            },
+        },
+    },
+    {
+        "name": "Post Combat",
+        "background": BASE_DIR / "asset/world/bossepasscombat.png",
+        "mask": BASE_DIR / "asset/world/bossepasscombatSEG.png",
+
+        # Le trône (droite) : interagir transforme le monstre en monster2
+        # (behavior "transform_monster") et pose le drapeau "monster2_active"
+        # (quand on revient au village, tous les PNJ fuient).
+        # Interactable seulement après la victoire (condition monster_defeated).
+        "interactions": [
+            {
+                "pos": [860, 545],
+                "action": "transform_monster",
+                "name": "Trône",
+                "requires": ["monster_defeated"],
+                "flag": "monster2_active",
+                "flag_value": True,
+            },
+        ],
+
+        "perspective": {
+            "enabled": False,
+            "top_scale": 1.00,
+            "bottom_scale": 1.00,
+        },
+
+        # On quitte la carte par la gauche (vers le village).
         "exits": {
             "left": {
                 "map": "Village",

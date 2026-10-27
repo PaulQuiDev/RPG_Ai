@@ -67,6 +67,7 @@ RPG_Ai/
   quêtes, combat).
 
 ### 2. Fonctionnalités importantes à ajouter
+- si obj defini mais pas de posion en plus au coorder indiquer retouren un warning ou erreur
 - **IA des ennemis** : les monstres patrouillent seulement ; machine à états.
 - **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des arbres
   de dialogue.
@@ -83,15 +84,14 @@ RPG_Ai/
   `COLLISION_RADIUS`, déjà définies dans `CHARACTERS`) → consolider.
 - Documentation agentic, si plus presise pour permetter au modle de ne pas avoire besoin de tout le code a chager. Si plus efficae par programme python affin d'obtimiser en contexte. 
 
-  ### Remarques / à investiguer (pas encore traité)
-- **Position de spawn des NPC non praticable** : tous les NPC du Village sont
-  placés sur un pixel `walkable=True` mais où le corps (rayon) emporte un
-  bâtiment (`can_stand_at=False`). Conséquence : le joueur ne peut pas se
-  positionner exactement dessus et l'image du NPC chevauche le bâtiment.
-  À traiter par données (réajuster les positions dans `settings.MAPS`) ;
-  pas de correction côté code.
+### To do tache a envisager :
+- interface simple pour touverz les setings de chaque carater sa bouge un peut suiet au génération ( tkinter ou autre tres simple mais facimen itérable pour trouver leur hauter posision...)
+- Humain debug , position , voire en transpaenr les zoen d'intergation dans in flag commprend pour un humain un problmme tres rapidement
+- Quin porte la taille de l'écan pouvoire le mettre en plein écran
+- mintenri la Doc pour aider au contex du llm et seulemen ce qui lui ait utile a chager
+- Mettre en for mat enveture exportable et importable (l'historie intération et les asset de l'autre) format json ou autre.
 
-  ### a discuter pas certain voire comment faire:
+  ### Ne pas implémenter : a discuter pas certain voire comment faire, idée imature:
 - **Collision par seuil de couleur fragile** : le masque praticable se base sur
   un seuil de couleur (R < 150). Remplacer par une map de collision **données**
   (tiles) + outil de calibration, pour ne pas casser la collision si l'art change.
@@ -103,6 +103,4 @@ RPG_Ai/
 - **IA des ennemis** :  ajouter santé.
  - **Inventaire / quêtes** : les interactions actuelles ne font que téléporter ou
   basculer d'actif.
-- **Combat** : les actifs `bossecombat` / `bossepasscombat` existent dans
-  `asset/world/` mais ne sont ni déclarés dans `MAPS` ni associés à une logique
-  de combat (santé, attaques, IA des ennemis).
+- Basculer sur du web pour l'hoste sur internet et pk pas le git hub pages
