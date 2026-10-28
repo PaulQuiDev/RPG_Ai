@@ -285,7 +285,11 @@ class Game:
     # -- Rendu -----------------------------------------------------------------
 
     def render(self):
-        """Affichage du monde, du joueur, du HUD et des overlays."""
+        """Affichage du monde, du joueur, du HUD et des overlays.
+
+        Dessine sur ``self.screen`` (surface logique 960x720) sans flip ;
+        le flip est fait par la boucle d'affichage (main.py) qui blitte
+        cette surface dans la fenêtre (éventuellement redimensionnée)."""
         self._draw_world()
         self._draw_monster()
         self._draw_candle_state()
@@ -295,7 +299,6 @@ class Game:
             self._draw_debug_overlay()
         if self.state == GameState.PAUSED:
             self._draw_pause_overlay()
-        pygame.display.flip()
 
     def _draw_monster(self):
         """Affiche le monstre (si vivant et sur la carte de combat)."""

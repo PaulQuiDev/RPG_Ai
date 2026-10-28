@@ -10,10 +10,11 @@ une logique de jeu par IA.
 
 ```bash
 cd ~/Bureau/RPG_Ai
-.venv/bin/python main.py               # lancer le jeu (fenêtre)
-.venv/bin/python main.py --debug       # + carte de collision (transparence),
-                                       # boîtes d'interaction + position joueur
-.venv/bin/python smoke_npc.py          # test headless (7 vérifs, sans fenêtre)
+.venv/bin/python main.py                 # jeu (fenêtre 960x720)
+.venv/bin/python main.py --window 800x600 # fenêtre custom (résolution logique 960x720, smoothscale + letterbox)
+.venv/bin/python main.py --fullscreen     # plein écran (960x720 étendue au moniteur)
+.venv/bin/python main.py --debug          # + carte de collision, itboxes, position joueur
+.venv/bin/python smoke_npc.py             # test headless (7 vérifs, sans fenêtre)
 ```
 
 ## Comment ça marche (en bref)
@@ -100,8 +101,10 @@ RPG_Ai/
 - ✅ Debug humain : afficher la position du joueur + les zones d'interaction
   (carte de collision en transparence, itboxes) via un flag de lancement
   (`--debug`).
-- ⬜ Option pour contrôler la taille de l'écran (plein écran / résolution
-  custom, ex. `--fullscreen` / `--window WxH`).
+- ✅ Option pour contrôler la taille de l'écran (plein écran / résolution
+  custom, ex. `--fullscreen` / `--window WxH`). Résolution logique du jeu
+  fixe (960x720) ; la fenêtre est redimensionnée via une surface hors-écran
+  + smoothscale + letterbox (aspect conservé, bandes noires si besoin).
 - ⬜ Maintenir la Doc : ne charger que ce qui aide le contexte LLM (éviter les
   détails inutiles à charger).
 - ⬜ Sauvegarde / chargement exportable & importable : historique d'actions +
