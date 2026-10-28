@@ -6,6 +6,24 @@ avec collision, changement de carte, objets interactifs et personnages **NPC**
 image IA** (prompts dans `prompte_actelle.txt`, sorties dans `Nonranger/`) — pas
 une logique de jeu par IA.
 
+## 🤖 Contexte minimal (agent LLM)
+Pour travailler sur ce code **sans charger tout le repo** (éviter les PNG et
+l'`.venv/`), lis dans cet ordre :
+
+1. Ce fichier — vue d'ensemble, structure, points à faire.
+2. `settings.py` — toute la config (cartes, personnages, sprites, constants).
+3. `main.py` — point d'entrée, boucle, options CLI (`--debug`, `--window`, `--fullscreen`).
+4. `world.py` — registre des cartes, chargement, transitions, spawn.
+5. `game_map.py` — fond + masque + couche FG, objets bleus, NPC, rendu.
+6. `player.py` — personnage, mouvement, animation, collision.
+7. `npc.py` — statique / patrouille, interaction.
+8. `behaviors.py` — objets bleus + registre `BEHAVIORS`.
+9. `sprite_loader.py` — découpe 4x3 des sheets.
+
+Lancer : `.venv/bin/python main.py [--debug|--window WxH|--fullscreen]`
+Tests : `.venv/bin/python -m pytest tests/`
+**NE pas charger** : `asset/*.png`, `Nonranger/*.png` (binaire, inutile à la logique).
+
 ## Lancer
 
 ```bash
@@ -93,6 +111,8 @@ RPG_Ai/
 
 ### Progression des tâches à envisager (✅ = fait · ⬜ = à faire)
 
+**Progression : 4 / 5** — ✅✅✅✅⬜
+
 - ✅ Interface simple pour ajuster les settings de coupe de chaque personnage
   (joueur ou NPC) — la taille/position de la feuille varie suite à la génération
   d'image IA. `tuner.py` (tkinter) : glisser une boîte de coupe par cadre +
@@ -105,8 +125,10 @@ RPG_Ai/
   custom, ex. `--fullscreen` / `--window WxH`). Résolution logique du jeu
   fixe (960x720) ; la fenêtre est redimensionnée via une surface hors-écran
   + smoothscale + letterbox (aspect conservé, bandes noires si besoin).
-- ⬜ Maintenir la Doc : ne charger que ce qui aide le contexte LLM (éviter les
-  détails inutiles à charger).
+- ✅ Maintenir la Doc : ne charger que ce qui aide le contexte LLM (éviter les
+  détails inutiles à charger). Section « Contexte minimal (agent LLM) » : ordre
+  de lecture des fichiers, commandes, et liste de ce qu'il ne faut **PAS** charger
+  (PNGs, `.venv/`).
 - ⬜ Sauvegarde / chargement exportable & importable : historique d'actions +
   assets, format JSON (sauvegarder / recharger l'état du jeu).
 
