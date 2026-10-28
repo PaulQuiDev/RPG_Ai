@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import json
+
 BASE_DIR = Path(__file__).resolve().parent
 
 # Masques SEG de la Forêt (défaut + alternée) et images de fond
@@ -11,6 +13,104 @@ FOREST_SEG_DEFAULT = BASE_DIR / "asset/world/fro1SEG.png"
 FOREST_SEG_ALT = BASE_DIR / "asset/world/fro2SEG.png"
 FOREST_BG_DEFAULT = BASE_DIR / "asset/world/fro1.png"
 FOREST_BG_ALT = BASE_DIR / "asset/world/fro2.png"
+
+
+# ---------------------------------------------------------------------------
+# Overrides de coupe produits par le tuner (tuner.py)
+# ---------------------------------------------------------------------------
+# Les PNG d'un personnage sont générés : la position et la hauteur du sprite
+# varient un peu d'une génération à l'autre. ``tuner.py`` permet d'ajuster
+# ces valeurs par personnage (joueur et NPC) et d'en écrire une copie dans
+# ``asset/sprite_configs.json``. Ce module recharge ce fichier au démarrage
+# et le merge vers les personnages, de façon data-driven (champs manquants
+# -> défaut global).
+
+def _deep_merge(a: dict, b: dict) -> dict:
+    """Merge ``b`` vers ``a`` (``b`` gagne les clés communes). Helper pour
+    ``apply_sprite_overrides``."""
+    out = dict(a)
+    for key, value in b.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _load_sprite_overrides(path):
+    """Charger (une seule fois, au module) les overrides de coupe produits
+    par le tuner dans ``asset/sprite_configs.json``.
+
+    Format (par nom de personnage, joueur ou NPC) ::
+
+        {
+          "Femme": {
+            "crop_size":     {"face": {"0": [200, 300], ...}, ...},
+            "crop_offsets":  {"face": {"0": [0, 15], ...}, ...},
+            "anchor_offsets":{"face": [0, 0], ...}
+          }
+        }
+
+    Les clés de colonne sont des chaînes dans le JSON ; elles sont
+    converties en ``int`` à la lecture. Un champ manquant est ignoré.
+    Un fichier absent, mal formé ou illisible renvoie ``{}`` (graceful :
+    le jeu démarre avec les défauts plutôt que de planter).
+    """
+    path = Path(path)
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        print(f"AVERTISSEMENT : {path} illisible, overrides ignorés")
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for name, cfg in data.items():
+        if not isinstance(cfg, dict):
+            continue
+        entry = {}
+        for field in ("crop_size", "crop_offsets"):
+            parsed = {}
+            for direction, cols in cfg.get(field, {}).items():
+                if not isinstance(cols, dict):
+                    continue
+                parsed[direction] = {
+                    int(col): tuple(v) for col, v in cols.items()
+                }
+            entry[field] = parsed
+        anchor_offsets = {}
+        for direction, value in cfg.get("anchor_offsets", {}).items():
+            try:
+                anchor_offsets[direction] = tuple(value)
+            except TypeError:
+                pass
+        entry["anchor_offsets"] = anchor_offsets
+        out[name] = entry
+    return out
+
+
+SPRITE_CONFIGS_PATH = BASE_DIR / "asset" / "sprite_configs.json"
+SPRITE_OVERRIDES = _load_sprite_overrides(SPRITE_CONFIGS_PATH)
+
+
+def apply_sprite_overrides(data: dict) -> dict:
+    """Merge les overrides du tuner dans un dict de personnage (joueur ou
+    NPC), en conservant les valeurs du dict pour les champs non fournis par
+    l'override. ``data`` est modifié en place et renvoyé (convenience).
+    """
+    name = data.get("name")
+    if name is None or name not in SPRITE_OVERRIDES:
+        return data
+    overrides = SPRITE_OVERRIDES[name]
+    for field in ("crop_size", "crop_offsets", "anchor_offsets"):
+        value = overrides.get(field)
+        if value:
+            data[field] = _deep_merge(data.get(field, {}), value)
+    return data
+
 
 # Personnages disponibles
 CHARACTERS = [
@@ -184,6 +284,14 @@ MAPS = [
         },
     },
 ]
+
+# Appliquer les overrides du tuner à tous les personnages (joueur et NPC)
+# pour qu'ils soient pris en compte dès la construction des Player / Npc.
+for _character in CHARACTERS:
+    apply_sprite_overrides(_character)
+for _map in MAPS:
+    for _npc in _map.get("npcs", []):
+        apply_sprite_overrides(_npc)
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 720

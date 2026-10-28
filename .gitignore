@@ -2,3 +2,6 @@
 __pycache__/*
 Nonranger/*
 tests/__pycache__/*
+
+# Overrides de coupe générés par tuner.py (spécifique à la machine)
+asset/sprite_configs.json

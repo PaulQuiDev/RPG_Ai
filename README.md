@@ -24,6 +24,7 @@ cd ~/Bureau/RPG_Ai
 | `player.py`         | personnage 4x3, mouvement, animation, collision                      |
 | `npc.py`            | personnages de carte : statique / patrouille, collision, interaction  |
 | `sprite_loader.py`  | découpe 4x3 des sheets, partagée par le joueur et les NPC            |
+| `tuner.py`          | GUI tkinter : ajuster crops & anchors → `asset/sprite_configs.json`    |
 | `behaviors.py`      | comportements des objets bleus + registre `BEHAVIORS`                |
 | `settings.py`       | toute la config (cartes, personnages, sprites, constants)            |
 
@@ -42,6 +43,7 @@ RPG_Ai/
 ├── player.py
 ├── npc.py
 ├── sprite_loader.py
+├── tuner.py              # GUI tkinter pour ajuster les crops/anchors
 ├── behaviors.py
 ├── smoke_npc.py            # test headless
 ├── prompte_actelle.txt     # prompts de génération d'assets (IA)
@@ -56,10 +58,12 @@ RPG_Ai/
 ### 1. Architecture — dette technique à traiter
 - **Démonolithiser `main.py`** : introduire un objet `Game`/`Scene` avec
   `update(dt)` / `render(screen)` découplés + une machine à états (pause, menus).
-- **Coupe de sprite 4x3 hardcodée** : `CROP_OFFSETS` / `CROP_SIZE` /
-  `ANCHOR_OFFSETS` sont des nombres magiques par personnage. Rendre data-driven
-  (config par actif) pour que l'ajout d'un personnage ne demande pas de retouche
-  manuelle. (Besoin d'un interfacte pour trouvet c'est setting ou nouveaux sitemme, génération d'image fluctue leur position )
+- ✅ **Coupe de sprite data-driven** (fait — voir « To do » #1) : les défauts
+  `CROP_SIZE` / `CROP_OFFSETS` / `ANCHOR_OFFSETS` restent dans `settings.py` ;
+  les overrides par personnage (joueur ou NPC) sont dans
+  `asset/sprite_configs.json`, ajustables via `python tuner.py`, et rechargées
+  au démarrage par `settings.apply_sprite_overrides`. Ajouter un personnage ne
+  demande plus de retouche manuelle.
 - **États mutés en mémoire** : `change_map_asset` / `cycle_map_variant` modifient
   `world.maps` à l'exécution sans persistance — formaliser l'état.
 - **Couplage des systèmes** : ajouter un système d'événements / composants pour
@@ -84,12 +88,22 @@ RPG_Ai/
   `COLLISION_RADIUS`, déjà définies dans `CHARACTERS`) → consolider.
 - Documentation agentic, si plus presise pour permetter au modle de ne pas avoire besoin de tout le code a chager. Si plus efficae par programme python affin d'obtimiser en contexte. 
 
-### To do tache a envisager :
-- interface simple pour touverz les setings de chaque carater sa bouge un peut suiet au génération ( tkinter ou autre tres simple mais facimen itérable pour trouver leur hauter posision...)
-- Humain debug , position , voire en transpaenr les zoen d'intergation dans in flag commprend pour un humain un problmme tres rapidement
-- Quin porte la taille de l'écan pouvoire le mettre en plein écran
-- mintenri la Doc pour aider au contex du llm et seulemen ce qui lui ait utile a chager
-- Mettre en for mat enveture exportable et importable (l'historie intération et les asset de l'autre) format json ou autre.
+### Progression des tâches à envisager (✅ = fait · ⬜ = à faire)
+
+- ✅ Interface simple pour ajuster les settings de coupe de chaque personnage
+  (joueur ou NPC) — la taille/position de la feuille varie suite à la génération
+  d'image IA. `tuner.py` (tkinter) : glisser une boîte de coupe par cadre +
+  point d'ancrage (pieds du personnage), aperçu live, écriture dans
+  `asset/sprite_configs.json`. Usage : `python tuner.py` ou `python tuner.py Femme`.
+- ⬜ Debug humain : afficher la position du joueur + les zones d'interaction
+  (carte de collision en transparence, itboxes) via un flag de lancement
+  (`--debug`).
+- ⬜ Option pour contrôler la taille de l'écran (plein écran / résolution
+  custom, ex. `--fullscreen` / `--window WxH`).
+- ⬜ Maintenir la Doc : ne charger que ce qui aide le contexte LLM (éviter les
+  détails inutiles à charger).
+- ⬜ Sauvegarde / chargement exportable & importable : historique d'actions +
+  assets, format JSON (sauvegarder / recharger l'état du jeu).
 
   ### Ne pas implémenter : a discuter pas certain voire comment faire, idée imature:
 - **Collision par seuil de couleur fragile** : le masque praticable se base sur
