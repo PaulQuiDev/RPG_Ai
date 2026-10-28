@@ -10,8 +10,10 @@ une logique de jeu par IA.
 
 ```bash
 cd ~/Bureau/RPG_Ai
-.venv/bin/python main.py        # lancer le jeu (fenêtre)
-.venv/bin/python smoke_npc.py   # test headless (7 vérifs, sans fenêtre)
+.venv/bin/python main.py               # lancer le jeu (fenêtre)
+.venv/bin/python main.py --debug       # + carte de collision (transparence),
+                                       # boîtes d'interaction + position joueur
+.venv/bin/python smoke_npc.py          # test headless (7 vérifs, sans fenêtre)
 ```
 
 ## Comment ça marche (en bref)
@@ -95,7 +97,7 @@ RPG_Ai/
   d'image IA. `tuner.py` (tkinter) : glisser une boîte de coupe par cadre +
   point d'ancrage (pieds du personnage), aperçu live, écriture dans
   `asset/sprite_configs.json`. Usage : `python tuner.py` ou `python tuner.py Femme`.
-- ⬜ Debug humain : afficher la position du joueur + les zones d'interaction
+- ✅ Debug humain : afficher la position du joueur + les zones d'interaction
   (carte de collision en transparence, itboxes) via un flag de lancement
   (`--debug`).
 - ⬜ Option pour contrôler la taille de l'écran (plein écran / résolution

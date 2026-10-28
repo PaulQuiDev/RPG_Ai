@@ -48,6 +48,7 @@ class Game:
         collisions_enabled=COLLISIONS_ENABLED_DEFAULT,
         character_index=0,
         world=None,
+        debug=False,
     ):
         """
         Args:
@@ -66,6 +67,12 @@ class Game:
         self.character_index = character_index
         self.collisions_enabled = collisions_enabled
         self.state = GameState.RUNNING
+
+        # Debug : overlay (--debug) + position dans la console.
+        self.debug = debug
+        self._debug_mask = None
+        self._debug_mask_map = None
+        self._last_console_print = 0
 
         # Le monde : injecté (test) ou construit depuis `maps`.
         self.world = world if world is not None else World(maps)
@@ -258,6 +265,23 @@ class Game:
                 if npc.interact(self.player, self.world, self.game_map):
                     self.game_map = self.world.game_map
 
+        # Debug : position du joueur + objet focalisé dans la console
+        # (tous les 500 ms, pour ne pas noyer la sortie).
+        if self.debug:
+            now = pygame.time.get_ticks()
+            if now - self._last_console_print > 500:
+                self._last_console_print = now
+                focus = self.game_map.get_focused_object(self.player)
+                target = (
+                    focus.get("action")
+                    or (focus.get("interaction") or {}).get("label", "")
+                ) if focus else ""
+                print(
+                    f"[debug] {self.player.name} "
+                    f"pos=({round(self.player.x)}, {round(self.player.y)}) "
+                    f"focus={target or '-'}"
+                )
+
     # -- Rendu -----------------------------------------------------------------
 
     def render(self):
@@ -267,6 +291,8 @@ class Game:
         self._draw_candle_state()
         self._draw_combat_hud()
         self._draw_hud()
+        if self.debug:
+            self._draw_debug_overlay()
         if self.state == GameState.PAUSED:
             self._draw_pause_overlay()
         pygame.display.flip()
@@ -363,6 +389,72 @@ class Game:
         )
         w, h = self.screen.get_size()
         self.screen.blit(text, ((w - text.get_width()) // 2, (h - text.get_height()) // 2))
+
+    # -- Debug (--debug) ------------------------------------------------------
+
+    def _build_debug_mask(self, gmap):
+        """Surface de debug du masque de collision : vert = praticable,
+        rouge = bloqué (alpha => transparence sur l'écran)."""
+        surf = pygame.Surface((gmap.width, gmap.height), pygame.SRCALPHA)
+        for y in range(gmap.height):
+            for x in range(gmap.width):
+                c = gmap.collision_mask.get_at((x, y))
+                if c.g > c.r and c.g > c.b:
+                    surf.set_at((x, y), (90, 255, 140, 150))
+                else:
+                    surf.set_at((x, y), (255, 110, 110, 150))
+        return surf
+
+    def _draw_debug_overlay(self):
+        """Overlay de debug (flag --debug) : carte de collision en transparence,
+        boîtes d'interaction (itboxes), position du joueur + marqueurs des NPCs.
+        Le texte de position est en bas à gauche (le HUD est en haut à gauche)."""
+        screen = self.screen
+        gmap = self.game_map
+        player = self.player
+
+        # Masque de collision (transparence), recomposé si la carte change.
+        if self._debug_mask is None or self._debug_mask_map is not gmap:
+            self._debug_mask = self._build_debug_mask(gmap)
+            self._debug_mask_map = gmap
+        screen.blit(self._debug_mask, (0, 0))
+
+        # Boîtes d'interaction (itboxes) + nom de l'action.
+        for obj in gmap.interact_objects:
+            box = obj["box"]
+            pygame.draw.rect(screen, (255, 255, 0), box, 2)
+            action = (
+                obj.get("action")
+                or (obj.get("interaction") or {}).get("label", "")
+                or ""
+            )
+            if action:
+                txt = self.font.render(str(action), True, (255, 255, 0))
+                screen.blit(txt, (box.centerx - txt.get_width() // 2,
+                                 box.bottom + 4))
+
+        # Position du joueur : cercle (rayon de collision) + texte bas-gauche.
+        if player is not None:
+            px, py = int(player.x), int(player.y)
+            r = max(player.collision_radius, 4) + 3
+            pygame.draw.circle(screen, (0, 255, 255), (px, py), r, 2)
+            w, h = self.screen.get_size()
+            pos_txt = self.font.render(
+                f"pos : ({round(player.x)}, {round(player.y)})",
+                True, (0, 255, 255)
+            )
+            screen.blit(pos_txt, (8, h - 24))
+
+        # NPCs : point + rayon de collision + nom + position.
+        for npc in gmap.npcs:
+            nx, ny = int(npc.x), int(npc.y)
+            pygame.draw.circle(screen, (255, 120, 120), (nx, ny),
+                               max(npc.collision_radius, 3), 1)
+            n_txt = self.font.render(
+                f"{npc.name} ({round(npc.x)},{round(npc.y)})",
+                True, (255, 120, 120)
+            )
+            screen.blit(n_txt, (nx + 6, ny - 24))
 
     # -- Quête du monstre (Boss Combat) -------------------------------------
 
