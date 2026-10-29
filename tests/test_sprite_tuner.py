@@ -103,6 +103,57 @@ class TestClampRect(unittest.TestCase):
         )
 
 
+class TestClampToSheet(unittest.TestCase):
+    """_clamp_to_sheet : clamp un rect (x,y,w,h) dans la feuille (0..w, 0..h).
+
+    Le cadre est autorisé à dépasser le cell de base, mais doit rester dans
+    la feuille.
+    """
+
+    def test_dans_la_feuille_invariant(self):
+        # Rect entièrement à l'intérieur de la feuille => inchangé.
+        self.assertEqual(
+            tuner._clamp_to_sheet((50, 10, 50, 50), 600, 1200), (50, 10, 50, 50)
+        )
+
+    def test_depasse_cell_mais_dans_feuille(self):
+        # Le cadre s'étend de x=100 à x=500 : hors de la cellule de base
+        # face[1] (200, 0, 400, 300), mais reste dans la feuille 600x1200.
+        # On veut que ça reste enregistré (pas clamped au cell).
+        r = tuner._clamp_to_sheet((100, 0, 400, 300), 600, 1200)
+        self.assertEqual(r, (100, 0, 400, 300))
+        self.assertGreater(r[0] + r[2], 400, "doit dépasser le cell (x1=400)")
+        self.assertLessEqual(r[0] + r[2], 600, "doit rester dans la feuille")
+
+    def test_depasse_feuille_reduit(self):
+        # Rect plus grand que la feuille dans les deux dimensions
+        # => réduit à la feuille, ancré à 0.
+        r = tuner._clamp_to_sheet((-50, -50, 800, 1500), 600, 1200)
+        self.assertEqual(r, (0, 0, 600, 1200))
+        self.assertTrue(r[0] + r[2] <= 600)
+        self.assertTrue(r[1] + r[3] <= 1200)
+
+    def test_negatif_revenant_dans_la_feuille(self):
+        r = tuner._clamp_to_sheet((-20, -20, 300, 200), 600, 1200)
+        self.assertEqual(r, (0, 0, 300, 200))
+
+    def test_toujours_dans_la_feuille(self):
+        # Propriété : pour un cadre hors-boundary, le résultat reste dans
+        # la feuille (x>=0, y>=0, x+w<=sheet_w, y+h<=sheet_h).
+        for x in (-100, -1, 0, 300, 590, 700):
+            for y in (-100, -1, 0, 600, 1190, 1300):
+                for w in (1, 50, 600, 800):
+                    for h in (1, 100, 1200, 2000):
+                        rx, ry, rw, rh = tuner._clamp_to_sheet(
+                            (x, y, w, h), 600, 1200)
+                        self.assertGreaterEqual(rx, 0, f"x={x} y={y}")
+                        self.assertGreaterEqual(ry, 0, f"x={x} y={y}")
+                        self.assertLessEqual(rx + rw, 600, f"x={x} y={y}")
+                        self.assertLessEqual(ry + rh, 1200, f"x={x} y={y}")
+                        self.assertGreaterEqual(rw, 1)
+                        self.assertGreaterEqual(rh, 1)
+
+
 class TestToJSONDict(unittest.TestCase):
     def test_int_keys_to_str(self):
         obj = {"face": {0: (200, 300), 1: (210, 260)}}

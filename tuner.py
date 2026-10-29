@@ -191,6 +191,22 @@ def _clamp_rect(rect, bounds):
     return (int(round(x)), int(round(y)), int(round(w)), int(round(h)))
 
 
+def _clamp_to_sheet(rect, sheet_w, sheet_h):
+    """Clamer un rect ``(x, y, w, h)`` dans la FEUILLE ``(0..sheet_w,
+    0..sheet_h)`` — et non dans une cellule.
+
+    Différent de ``_clamp_rect`` : le cadre est autorisé à dépasser le
+    carré de base, tant qu'il reste dans la feuille. Utilisé pour
+    enregistrer un cadre qui déborde du cell (sans jamais quitter la
+    feuille)."""
+    x, y, w, h = rect
+    w = max(1, min(int(w), int(sheet_w)))
+    h = max(1, min(int(h), int(sheet_h)))
+    x = max(0, min(int(x), int(sheet_w) - int(w)))
+    y = max(0, min(int(y), int(sheet_h) - int(h)))
+    return (int(x), int(y), int(w), int(h))
+
+
 def _ppm_bytes(surface: pygame.Surface) -> bytes:
     """Convertir une surface pygame (RGBA) en PPM binaire (P6)."""
     data = pygame.image.tobytes(surface, "RGBA")
@@ -241,6 +257,12 @@ class SpriteTunerWindow:
         self.prev_canvas.bind("<Button-1>", self._on_prev_press)
         self.prev_canvas.bind("<B1-Motion>", self._on_prev_drag)
         self.prev_canvas.bind("<ButtonRelease-1>", self._on_prev_release)
+
+        # Décalage fin de la boîte active (flèches) ; Shift = pas plus gros.
+        self.root.bind("<Key-Left>", self._on_nudge)
+        self.root.bind("<Key-Right>", self._on_nudge)
+        self.root.bind("<Key-Up>", self._on_nudge)
+        self.root.bind("<Key-Down>", self._on_nudge)
 
     # ---------------- UI ----------------
     def _list_names(self):
@@ -346,6 +368,10 @@ class SpriteTunerWindow:
                 rect = _clamp_rect(
                     (int(bounds[0]) + int(ox), int(bounds[1]) + int(oy),
                      int(cw), int(ch)), bounds)
+                # Le cadre peut dépasser le cell (sans quitter la feuille)
+                # si une override l'a enregistré.
+                rect = _clamp_to_sheet(
+                    rect, self.sheet_w, self.sheet_h)
                 self.crops[(direction, col)] = rect
         self.anchors = {
             d: (int(ao.get(d, (0, 0))[0]), int(ao.get(d, (0, 0))[1]))
@@ -369,11 +395,39 @@ class SpriteTunerWindow:
         if mode == "crop":
             self.crop_btn.config(relief="sunken")
             self.anchor_btn.config(relief="flat")
-            self.status_var.set("Mode CUTTER : glissez une boîte sur la feuille.")
+            self.status_var.set(
+                "Mode CUTTER : glissez une boîte sur la feuille. "
+                "Flèches = déplacer (Shift = pas gros).")
         else:
             self.anchor_btn.config(relief="sunken")
             self.crop_btn.config(relief="flat")
-            self.status_var.set("Mode ANCHOR : glissez le point rouge sur l'aperçu.")
+            self.status_var.set(
+                "Mode ANCHOR : glissez le point rouge sur l'aperçu.")
+
+    def _on_nudge(self, event) -> None:
+        """Décale la boîte de coupe active (flèches) ; Shift = pas gros."""
+        # 0x2 = KEY_SHIFT (constante tkinter non exposée par les stubs Pyright).
+        shift_mask = 0x2
+        step = 32 if (event.modifiers & shift_mask) else 8
+        if event.keysym == "Left":
+            dx, dy = -step, 0
+        elif event.keysym == "Right":
+            dx, dy = step, 0
+        elif event.keysym == "Up":
+            dx, dy = 0, -step
+        elif event.keysym == "Down":
+            dx, dy = 0, step
+        else:
+            return
+        x, y, w, h = self.crops.get(self.active, (0, 0, 1, 1))
+        self.crops[self.active] = _clamp_to_sheet(
+            (x + dx, y + dy, w, h), self.sheet_w, self.sheet_h)
+        self._build_frames()
+        self._render_static()
+        self._update_info()
+        self.status_var.set(
+            f"Cadre déplacé : {self.active[0]} [{self.active[1]}] "
+            f"= {self.crops[self.active]} (pas {step}px)")
 
     # ---------------- Sheet interactions ----------------
     def _select_cell_at(self, cx: int, cy: int) -> None:
@@ -420,8 +474,9 @@ class SpriteTunerWindow:
         if w < 4 or h < 4:
             self._render_static()
             return
-        bounds = cell_bounds(self.sheet_w, self.sheet_h, *self.active)
-        x, y, w, h = _clamp_rect((x, y, w, h), bounds)
+        # Clamping à la FEUILLE (et non au cell) : on autorise un cadre qui
+        # dépasse le carré de base, tant qu'il reste dans la feuille.
+        x, y, w, h = _clamp_to_sheet((x, y, w, h), self.sheet_w, self.sheet_h)
         self.crops[self.active] = (x, y, w, h)
         self._build_frames()
         self._render_static()
@@ -430,7 +485,7 @@ class SpriteTunerWindow:
             f"Cadre ajusté : {self.active[0]} [{self.active[1]}] = ({x},{y}) {w}x{h}")
 
     def _redraw_drag_box(self) -> None:
-        if getattr(self, "_drag_box_item", None) is not None:
+        if self._drag_box_item is not None:
             self.sheet_canvas.delete(self._drag_box_item)
             self._drag_box_item = None
         if self._drag_start is None or self.mode != "crop":
