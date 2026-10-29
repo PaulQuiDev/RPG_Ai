@@ -131,6 +131,25 @@ def select_adventure(screen, font):
     return None
 
 
+def _show_error_window(screen, font, message):
+    """Afficher un écran d'erreur plein écran (fond rouge) et attendre
+    une interaction (touche, clic ou fermeture de fenêtre) avant de
+    rendre le contrôle — utile quand le chargement échoue et qu'une
+    console n'est pas visible."""
+    screen.fill((90, 20, 20))
+    y = 40
+    for line in message.splitlines():
+        surf = font.render(line, True, (255, 255, 255))
+        screen.blit(surf, (40, y))
+        y += 32
+    pygame.display.flip()
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type in (pygame.QUIT, pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                running = False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Jeu RPG (pygame)")
     parser.add_argument(
@@ -200,13 +219,39 @@ def main():
             return
         config_path = Path(config_path)
 
-    characters, maps, meta = load_adventure(config_path)
+    # --- Chargement de l'aventure (avec affichage d'erreur visible) ---
+    try:
+        characters, maps, meta = load_adventure(config_path)
+    except Exception as error:
+        message = (
+            "ERREUR : impossible de charger l'aventure.\n"
+            f"fichier : {config_path}\n"
+            f"raison  : {type(error).__name__} : {error}\n"
+            "(Appuyez sur une touche pour quitter.)"
+        )
+        _show_error_window(screen, font, message)
+        pygame.quit()
+        raise SystemExit(
+            f"Erreur : impossible de charger l'aventure {config_path} — {error}"
+        ) from error
     pygame.display.set_caption(meta.get("window_title", WINDOW_TITLE))
 
     if not characters:
+        message = (
+            "ERREUR : l'aventure chargée ne contient aucun personnage.\n"
+            f"fichier : {config_path}\n"
+            "(Appuyez sur une touche pour quitter.)"
+        )
+        _show_error_window(screen, font, message)
         pygame.quit()
         raise SystemExit("Aucun personnage dans l'aventure chargée.")
     if not maps:
+        message = (
+            "ERREUR : l'aventure chargée ne contient aucune carte.\n"
+            f"fichier : {config_path}\n"
+            "(Appuyez sur une touche pour quitter.)"
+        )
+        _show_error_window(screen, font, message)
         pygame.quit()
         raise SystemExit("Aucune carte dans l'aventure chargée.")
 
@@ -225,9 +270,15 @@ def main():
             debug=args.debug,
             save_path=args.save,
         )
-    except (RuntimeError, ValueError, KeyError) as error:
+    except Exception as error:
+        message = (
+            "ERREUR : impossible d'initialiser le jeu.\n"
+            f"raison  : {type(error).__name__} : {error}\n"
+            "(Appuyez sur une touche pour quitter.)"
+        )
+        _show_error_window(screen, font, message)
         pygame.quit()
-        raise SystemExit(str(error)) from error
+        raise SystemExit(f"Erreur : impossible d'initialiser le jeu — {error}") from error
 
     # --load : reprise de partie avant la boucle.
     if args.load:
