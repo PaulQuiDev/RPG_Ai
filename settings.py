@@ -39,11 +39,12 @@ def _deep_merge(a: dict, b: dict) -> dict:
     return out
 
 
-def _load_sprite_overrides(path):
-    """Charger (une seule fois, au module) les overrides de coupe produits
-    par le tuner dans ``asset/sprite_configs.json``.
+def _parse_sprite_overrides(raw):
+    """Parser un dict ``sprite_overrides`` (format JSON d'aventure) vers le
+    format ``SPRITE_OVERRIDES`` (clés de colonne en ``int``, valeurs en
+    tuple). Renvoie ``{}`` si ``raw`` n'est pas un dict.
 
-    Format (par nom de personnage, joueur ou NPC) ::
+    Format entrant (par nom de personnage, joueur ou NPC) ::
 
         {
           "Femme": {
@@ -54,23 +55,12 @@ def _load_sprite_overrides(path):
         }
 
     Les clés de colonne sont des chaînes dans le JSON ; elles sont
-    converties en ``int`` à la lecture. Un champ manquant est ignoré.
-    Un fichier absent, mal formé ou illisible renvoie ``{}`` (graceful :
-    le jeu démarre avec les défauts plutôt que de planter).
+    converties en ``int``. Un champ manquant ou illisible est ignoré.
     """
-    path = Path(path)
-    if not path.exists():
-        return {}
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (json.JSONDecodeError, OSError):
-        print(f"AVERTISSEMENT : {path} illisible, overrides ignorés")
-        return {}
-    if not isinstance(data, dict):
+    if not isinstance(raw, dict):
         return {}
     out = {}
-    for name, cfg in data.items():
+    for name, cfg in raw.items():
         if not isinstance(cfg, dict):
             continue
         entry = {}
@@ -92,6 +82,27 @@ def _load_sprite_overrides(path):
         entry["anchor_offsets"] = anchor_offsets
         out[name] = entry
     return out
+
+
+def _load_sprite_overrides(path):
+    """Charger (une seule fois, au module) les overrides de coupe produits
+    par le tuner dans ``asset/sprite_configs.json``.
+
+    Un fichier absent, mal formé ou illisible renvoie ``{}`` (graceful :
+    le jeu démarre avec les défauts plutôt que de planter).
+    """
+    path = Path(path)
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        print(f"AVERTISSEMENT : {path} illisible, overrides ignorés")
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return _parse_sprite_overrides(data)
 
 
 SPRITE_CONFIGS_PATH = BASE_DIR / "asset" / "sprite_configs.json"
@@ -165,6 +176,13 @@ def load_adventure(config_path=None):
     if not isinstance(data, dict):
         raise ValueError(f"Format d'aventure invalide (non-dict) : {config_path}")
 
+    # Charger les overrides de sprite de l'aventure et les appliquer aux
+    # personnages / NPCs (remplace la config globale du fichier
+    # ``asset/sprite_configs.json`` pour l'aventure active).
+    global SPRITE_OVERRIDES
+    sprite_overrides = _parse_sprite_overrides(data.get("sprite_overrides"))
+    SPRITE_OVERRIDES = sprite_overrides
+
     def _load_character(entry):
         out = dict(entry)
         if isinstance(out.get("sprite"), str):
@@ -202,6 +220,7 @@ def load_adventure(config_path=None):
         "title": data.get("title", config_path.stem),
         "window_title": data.get("window_title", WINDOW_TITLE),
         "start_map": data.get("start_map"),
+        "sprite_overrides": data.get("sprite_overrides") or {},
     }
 
     return characters, maps, meta

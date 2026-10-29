@@ -5,12 +5,18 @@ Un PNG de personnage est généré : la position et la hauteur du sprite
 varient un peu d'une génération à l'autre. Ce tuner permet d'ajuster
 manuellement, cadre par cadre, la fenêtre de coupe (taille + position dans
 la feuille) et le point d'ancrage (les pieds du personnage), avec un
-aperçu live. Le résultat est écrit dans ``asset/sprite_configs.json`` et
-rechargé au démarrage du jeu (voir ``settings.apply_sprite_overrides``).
+aperçu live. Le résultat est écrit dans le champ ``sprite_overrides``
+du fichier JSON d'aventure (par défaut ``adventures/demo-test.json``,
+changeable via ``--adv``), puis rechargé au démarrage du jeu (voir
+``settings.apply_sprite_overrides``).
 
 Usage :
-    python tuner.py              # liste tous les personnages
-    python tuner.py Femme        # ouvre directement sur "Femme"
+    python tuner.py                          # liste tous les personnages
+    python tuner.py Femme                    # ouvre sur "Femme"
+    python tuner.py Femme --adv PATH         # pour l'aventure PATH
+    python tuner.py --adv PATH --import-global
+        # importe la config globale (asset/sprite_configs.json) dans
+        # l'aventure PATH (sans GUI).
 
 La logique pure (lecture / écriture des overrides) est à la tête du
 fichier et est testable sans GUI (tests/test_sprite_tuner.py).
@@ -136,6 +142,84 @@ def save_tuned(
     return out
 
 
+def _adventure_read_adventure(path) -> dict:
+    """Charger un fichier d'aventure (JSON). Lève ``FileNotFoundError``
+    si le fichier n'existe pas."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Aventure introuvable : {path}")
+    with path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _adventure_write_adventure(data: dict, path) -> Path:
+    """Écrire un dict d'aventure complet dans ``path`` (JSON), de façon
+    atomique (fichier temp puis renommage). Crée les dossiers parents."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
+    tmp.replace(path)
+    return path
+
+
+def save_tuned_to_adventure(
+    name: str,
+    crop_size: dict,
+    crop_offsets: dict,
+    anchor_offsets: dict,
+    adventure_path,
+) -> Path:
+    """Écrire la config effective du personnage ``name`` dans le champ
+    ``sprite_overrides`` du fichier d'aventure ``adventure_path``.
+
+    Fusion dans le champ : les autres personnages sont conservés ; si le
+    personnage existe déjà, il est surchargé (réécrit). Les clés int ->
+    str pour les colonnes ; à la lecture elles sont restaurées (voir
+    ``settings.apply_sprite_overrides``).
+    """
+    data = _adventure_read_adventure(adventure_path)
+    overrides = data.setdefault("sprite_overrides", {})
+    overrides[name] = {
+        "crop_size": _to_json_dict(crop_size),
+        "crop_offsets": _to_json_dict(crop_offsets),
+        "anchor_offsets": {d: list(v) for d, v in anchor_offsets.items()},
+    }
+    return _adventure_write_adventure(data, adventure_path)
+
+
+def reset_character_in_adventure(name: str, adventure_path) -> Path:
+    """Supprimer la config du personnage ``name`` du champ
+    ``sprite_overrides`` du fichier d'aventure ``adventure_path`` (si
+    présente). Renvoie le chemin."""
+    data = _adventure_read_adventure(adventure_path)
+    overrides = data.get("sprite_overrides")
+    if isinstance(overrides, dict):
+        overrides.pop(name, None)
+    return _adventure_write_adventure(data, adventure_path)
+
+
+def import_global_to_adventure(adventure_path) -> tuple[Path, int]:
+    """Importer la config globale (``settings.SPRITE_CONFIGS_PATH``) dans
+    le champ ``sprite_overrides`` du fichier d'aventure ``adventure_path``.
+
+    Fusion : la globale gagne sur les entrées existantes. Renvoie
+    ``(chemin, nombre d'entrées importées)``. Si le fichier global est
+    absent, aucun changement."""
+    global_overrides = load_overrides(settings.SPRITE_CONFIGS_PATH)
+    data = _adventure_read_adventure(adventure_path)
+    adv_overrides = data.setdefault("sprite_overrides", {})
+    for name, cfg in global_overrides.items():
+        adv_overrides[name] = {
+            "crop_size": _to_json_dict(cfg.get("crop_size", {})),
+            "crop_offsets": _to_json_dict(cfg.get("crop_offsets", {})),
+            "anchor_offsets": {d: list(v) for d, v in cfg.get("anchor_offsets", {}).items()},
+        }
+    _adventure_write_adventure(data, adventure_path)
+    return Path(adventure_path), len(global_overrides)
+
+
 def read_character_config(name: str):
     """Retourner ``(name, data, kind)`` d'un personnage du nom ``name`` dans
     ``settings`` (joueur ou NPC) après application des overrides et des
@@ -222,7 +306,12 @@ def _ppm_bytes(surface: pygame.Surface) -> bytes:
 # ---------------------------------------------------------------------------
 
 class SpriteTunerWindow:
-    def __init__(self, root: tk.Tk, initial_name: str | None = None):
+    def __init__(self, root: tk.Tk, initial_name: str | None = None,
+                 adventure_path=None):
+        self.adventure_path = (
+            Path(adventure_path) if adventure_path
+            else settings.ADVENTURES_DIR / "demo-test.json"
+        )
         self.root = root
         self.root.title("Ajusteur de sprites (tuner)")
         self.root.resizable(False, False)
@@ -624,9 +713,7 @@ class SpriteTunerWindow:
         cs = {d: {col: settings.CROP_SIZE[d][col] for col in SHEET_COLS} for d in SHEET_ROWS}
         co = {d: {col: settings.CROP_OFFSETS[d][col] for col in SHEET_COLS} for d in SHEET_ROWS}
         ao = {d: (0, 0) for d in SHEET_ROWS}
-        overrides = load_overrides(settings.SPRITE_CONFIGS_PATH)
-        overrides.pop(name, None)
-        save_overrides(settings.SPRITE_CONFIGS_PATH, overrides)
+        reset_character_in_adventure(name, self.adventure_path)
         self._recompute_crops_and_anchors(cs, co, ao)
         self._build_frames()
         self._render_static()
@@ -648,17 +735,57 @@ class SpriteTunerWindow:
                 crop_size[direction][col] = (w, h)
                 crop_offsets[direction][col] = (x - x0, y - y0)
         anchor_offsets = {d: self.anchors[d] for d in SHEET_ROWS}
-        out = save_tuned(name, crop_size, crop_offsets, anchor_offsets)
+        out = save_tuned_to_adventure(
+            name, crop_size, crop_offsets, anchor_offsets, self.adventure_path)
         self.status_var.set(f"✓ {name} sauvegardé dans {Path(out).name}")
         return out
 
 
 def main(argv: list[str] | None = None) -> None:
     argv = argv or sys.argv[1:]
+
+    # Parse --adv (chemin d'aventure) et --import-global (option, n'importe
+    # où dans argv).
+    adventure_path = None
+    import_global = False
+    positional: list[str] = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--adv":
+            if i + 1 >= len(argv):
+                print("ERR : --adv nécessite un chemin (fichier d'aventure JSON)")
+                sys.exit(1)
+            adventure_path = argv[i + 1]
+            i += 2
+        elif arg == "--import-global":
+            import_global = True
+            i += 1
+        else:
+            positional.append(arg)
+            i += 1
+
+    adv = (Path(adventure_path) if adventure_path
+           else (settings.ADVENTURES_DIR / "demo-test.json"))
+
+    # Mode sans GUI : importer la config globale dans l'aventure.
+    if import_global:
+        path, count = import_global_to_adventure(adv)
+        print(f"Importée la config globale dans {path} : {count} personnage(s).")
+        return
+
+    # Recharger l'aventure demandée dans le module settings
+    # (SPRITE_OVERRIDES, CHARACTERS, MAPS, ADVANTURE_META) pour qu'elle
+    # soit l'active (list_characters / read_character_config y lisent).
+    characters, maps, meta = settings.load_adventure(adv)
+    settings.CHARACTERS = characters
+    settings.MAPS = maps
+    settings.ADVANTURE_META = meta
+
     pygame.display.init()
     root = tk.Tk()
-    initial = argv[0] if argv else None
-    SpriteTunerWindow(root, initial_name=initial)
+    initial = positional[0] if positional else None
+    SpriteTunerWindow(root, initial_name=initial, adventure_path=adv)
     root.mainloop()
     pygame.quit()
 

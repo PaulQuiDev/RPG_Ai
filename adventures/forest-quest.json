@@ -264,5 +264,6 @@
         }
       }
     }
-  ]
+  ],
+  "sprite_overrides": {}
 }
