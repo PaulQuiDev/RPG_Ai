@@ -607,14 +607,24 @@ class Game:
             offset = int(phase * 2)
             self.screen.blit(flame, (cx - 7 + offset, cy - 24))
 
+    def combat_candle_total(self):
+        """Nombre de bougies à allumer (objets ``light_candle``) sur la
+        carte de combat — pour l'HUD de combat et les tests.
+        Zéro hors de la carte de combat."""
+        if self.world.current_map_data.get("name") != BOSS_COMBAT_MAP:
+            return 0
+        return self.game_map.count_action("light_candle")
+
     def _draw_combat_hud(self):
         """Affiche l'état du combat (compteur de bougies + message reset)."""
         if self.world.current_map_data.get("name") != BOSS_COMBAT_MAP:
             return
         w, h = self.screen.get_size()
-        # Compteur de bougies (haut à droite).
+        # Compteur de bougies (haut à droite) : le TOTAL est le nombre
+        # d'objets light_candle, pas le nombre d'objets bleus totaux
+        # (fix du bug « Bougies : x/10 » au lieu de « x/5 »).
         count = self._candle_lit_count
-        total = len(self.game_map.interact_objects)
+        total = self.combat_candle_total()
         label = self.font.render(
             f"Bougies : {count}/{total}", True, (255, 255, 150)
         )
