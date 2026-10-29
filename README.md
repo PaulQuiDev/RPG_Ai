@@ -92,7 +92,7 @@ RPG_Ai/
   quêtes, combat).
 
 ### 2. Fonctionnalités importantes à ajouter
-- si obj defini mais pas de posion en plus au coorder indiquer retouren un warning ou erreur
+- si obj zone bleu defini dans settings mais pas de posion en plus au coorder indiquer retouren un warning ou erreur
 - **IA des ennemis** : les monstres patrouillent seulement ; machine à états.
 - **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des arbres
   de dialogue.
@@ -111,7 +111,7 @@ RPG_Ai/
 
 ### Progression des tâches à envisager (✅ = fait · ⬜ = à faire)
 
-**Progression : 4 / 5** — ✅✅✅✅⬜
+**Progression : 8 / 10** — ✅✅✅✅✅✅✅✅⬜⬜
 
 - ✅ Interface simple pour ajuster les settings de coupe de chaque personnage
   (joueur ou NPC) — la taille/position de la feuille varie suite à la génération
@@ -129,8 +129,27 @@ RPG_Ai/
   détails inutiles à charger). Section « Contexte minimal (agent LLM) » : ordre
   de lecture des fichiers, commandes, et liste de ce qu'il ne faut **PAS** charger
   (PNGs, `.venv/`).
+- ✅ Interaction des objets bleus — plus d'« agir (I) sur : None » :
+  `get_focused_object` ne cible que les objets bleus qui ont un comportement
+  (`action` ou `interaction`) ; label lisible (`name`/`action`/
+  `interaction.label`) + validation au chargement (objets sans comportement et
+  interactions orphelines signalées). (`game_map.py`, `world.py`, `game.py`)
+- ✅ Combat chef — HUD des bougies exact (5, pas 10) et reset d'état : un
+  nouveau monstre + bougies à zéro à chaque re-entrée dans la carte de combat
+  (le joueur ne reste pas « en boss fight » après le retour). (`game.py`)
+- ✅ Tuner — correction Pylance (`_drag_box_item` sans `getattr`, attribut déclaré
+  dans `__init__`), touches flèches pour décaler la boîte (Shift = pas gros),
+  et cadre autorisé hors du carré de base (clamping à la feuille, pas au cell).
+  (`tuner.py`)
+- ✅ Tests de la boucle complète — Village → Forêt → Boss Combat (5 bougies) →
+  Post Combat (trône) → Village (transformation + fuite des PNJ) → re-entrée
+  Boss Combat (nouveau monstre, bougies à zéro), sur les cartes réelles ; +
+  5 tests `TestClampToSheet`. (`tests/test_full_quest.py`,
+  `tests/test_sprite_tuner.py`)
 - ⬜ Sauvegarde / chargement exportable & importable : historique d'actions +
   assets, format JSON (sauvegarder / recharger l'état du jeu).
+- ⬜ Machine à états des monstres : les ennemis patrouillent seulement ; ajouter
+  poursuite / attaque (voir §1 « IA des ennemis »).
 
   ### Ne pas implémenter : a discuter pas certain voire comment faire, idée imature:
 - **Collision par seuil de couleur fragile** : le masque praticable se base sur
