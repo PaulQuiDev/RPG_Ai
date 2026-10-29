@@ -10,6 +10,10 @@ Options :
   --fullscreen  plein écran : la résolution logique (960x720) est étendue
                 au moniteur (aspect conservé, bandes noires si besoin).
                 Mutuellement exclusif avec --window.
+  --save PATH   chemin du fichier de sauvegarde (clé S).
+                Défaut : <projet>/saves/game.json.
+  --load PATH   fichier à charger au démarrage (reprise de partie).
+                Défaut : sauvegarde par défaut.
 """
 import argparse
 import re
@@ -76,6 +80,18 @@ def main():
         action="store_true",
         help="plein écran (résolution logique 960x720 étendue au moniteur).",
     )
+    parser.add_argument(
+        "--save",
+        metavar="PATH",
+        help="chemin du fichier de sauvegarde (utilisé par S et par défaut "
+        "au chargement). Défaut : <projet>/saves/game.json.",
+    )
+    parser.add_argument(
+        "--load",
+        metavar="PATH",
+        help="chemin du fichier à charger au démarrage (reprise de partie). "
+        "Défaut : sauvegarde par défaut.",
+    )
     args = parser.parse_args()
 
     if args.window and args.fullscreen:
@@ -112,10 +128,16 @@ def main():
             MAPS,
             collisions_enabled=COLLISIONS_ENABLED_DEFAULT,
             debug=args.debug,
+            save_path=args.save,
         )
     except (RuntimeError, ValueError, KeyError) as error:
         pygame.quit()
         raise SystemExit(str(error)) from error
+
+    # --load : reprise de partie avant la boucle.
+    if args.load:
+        if not game.load(args.load):
+            print("Avertissement : sauvegarde ignorée, partie fraîche.")
 
     # Le jeu est blitté en conservant son ratio d'aspect (letterbox).
     # Fast path : fenêtre de la résolution logique -> blit 1:1 (pas de

@@ -6,8 +6,12 @@ boucle.
 L'état est extensible : ajouter une entrée dans `GameState` + un handler
 clé est suffisant pour introduire un état (menu, etc.).
 """
+import json
 import math
+from datetime import datetime
+
 import pygame
+from pathlib import Path
 
 from settings import BASE_DIR, COLLISIONS_ENABLED_DEFAULT
 from behaviors import BEHAVIORS, go_to_map
@@ -49,6 +53,7 @@ class Game:
         character_index=0,
         world=None,
         debug=False,
+        save_path=None,
     ):
         """
         Args:
@@ -87,6 +92,13 @@ class Game:
         self._monster2_transformed = False   # transformation du village appliquée ?
         self._prev_map_name = self.world.current_map_data.get("name")
         self._reset_message_until = 0.0      # timestamp (ms) du prochain reset message
+        # Historique des actions (pour la sauvegarde / chargement).
+        self._action_history = []
+        # Chemin par défaut des sauvegardes (S / L).
+        self.save_path = (
+            Path(str(save_path)) if save_path
+            else (BASE_DIR / "saves" / "game.json")
+        )
 
         # Conditions globales (quêtes) : drapeaux -> conditions.
         self.world.register_condition(
@@ -138,6 +150,10 @@ class Game:
             self.game_map = self.world.game_map
         elif key == pygame.K_i:
             self._interact()
+        elif key == pygame.K_s:
+            self.save()
+        elif key == pygame.K_l:
+            self.load()
 
     def _handle_paused_key(self, key):
         if key == pygame.K_ESCAPE:
@@ -205,6 +221,8 @@ class Game:
         if not applied:
             return
 
+        # Historique de l'action appliquée.
+        self._log_action(action or "move")
         self.game_map = self.world.game_map
 
         # Drapeau global à poser après la réussite (déclaratif).
@@ -353,6 +371,7 @@ class Game:
             f"Personnages : {len(self.game_map.npcs)} sur cette carte",
             "Objets bleus : interactifs (I : agir sur le plus proche)",
             "Prémiplan (FG) : devant le joueur derrière un élément",
+            "S : sauvegarder | L : charger l'état du jeu",
             "Échap : pause",
         ]
 
@@ -471,6 +490,7 @@ class Game:
         curr = self.world.current_map_data.get("name")
         if curr != prev:
             self._prev_map_name = curr
+            self._log_action("map_change", name=curr)
             self._monster = None
             self._candle_lit = set()
             self._candle_lit_count = 0
@@ -532,6 +552,7 @@ class Game:
             return
         self._candle_lit.add(key)
         self._candle_lit_count += 1
+        self._log_action("light_candle", cx=cx, cy=cy)
         print(f"Bougie allumée ({cx},{cy}) — {self._candle_lit_count}/5.")
         if self._candle_lit_count >= 5:
             self._defeat_monster()
@@ -541,6 +562,7 @@ class Game:
         monster_defeated et on bascule sur la carte Post Combat."""
         self._monster = None
         self.world.flag_set("monster_defeated", True)
+        self._log_action("monster_defeated")
         world = self.world
         target_index = None
         for i, md in enumerate(world.maps):
@@ -581,6 +603,7 @@ class Game:
             if not hasattr(npc, "speed") or npc.speed is None or npc.speed < 20:
                 npc.speed = 45.0
         self._monster2_transformed = True
+        self._log_action("transform_monster2")
         print(
             "Monstre transformé (monster2.png) ! Tous les PNJ du village fuient."
         )
@@ -647,3 +670,133 @@ class Game:
             reset_bg.fill((0, 0, 0, 150))
             self.screen.blit(reset_bg, (8, 130))
             self.screen.blit(reset_msg, (14, 134))
+
+    # -- Sauvegarde / chargement ------------------------------------------
+
+    def _log_action(self, action, **kwargs):
+        """Trace une action dans l'historique (pour la sauvegarde /
+        chargement). Conserve au plus les 200 dernières entrées."""
+        entry = action
+        if kwargs:
+            parts = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+            entry = f"{action}({parts})"
+        self._action_history.append(entry)
+        if len(self._action_history) > 200:
+            self._action_history.pop(0)
+
+    def save(self, path=None):
+        """Sauvegarde l'état du jeu dans ``path`` (JSON, écriture atomique).
+
+        Renvoie le ``Path`` du fichier. L'état global (drapeaux de quête,
+        bougies, transformation, monstre, position du joueur, historique
+        d'actions) est sérialisé ; ``load()`` le restaure fidèlement.
+        """
+        path = Path(path) if path else self.save_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "version": 1,
+            "saved_at": datetime.now().isoformat(timespec="seconds"),
+            "map_index": int(self.world.map_index),
+            "map_name": self.world.current_map_data.get("name"),
+            "player": {"x": float(self.player.x), "y": float(self.player.y)},
+            "flags": {str(k): bool(v) for k, v in self.world.flags.items()},
+            "candle_lit": [
+                [float(cx), float(cy)] for (cx, cy) in self._candle_lit
+            ],
+            "monster_pos": (
+                [float(self._monster.x), float(self._monster.y)]
+                if self._monster is not None
+                else None
+            ),
+            "monster2_transformed": bool(self._monster2_transformed),
+            "action_history": list(self._action_history),
+        }
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2, ensure_ascii=False)
+        tmp.replace(path)
+        self._log_action("save")
+        print(
+            f"✓ Sauvegarde dans {path} "
+            f"(bougies {self._candle_lit_count}/{self.combat_candle_total()}, "
+            f"{len(self._action_history)} actions)."
+        )
+        return path
+
+    def load(self, path=None):
+        """Charge l'état du jeu depuis ``path`` (JSON).
+
+        Renvoie ``True`` si l'état a été restauré, ``False`` sinon.
+        La carte, le joueur, les drapeaux, les bougies, le monstre et
+        l'historique sont restaurés ; le monstre est recréé à sa position
+        sauvée (ou à zéro s'il est mort) si la sauvegarde est sur la carte
+        de combat et qu'il est vivant.
+        """
+        path = Path(path) if path else self.save_path
+        if not path.exists():
+            print(f"Aucune sauvegarde dans {path} — chargement ignoré.")
+            return False
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                state = json.load(fh)
+        except (json.JSONDecodeError, OSError) as error:
+            print(f"ÉCHEC : sauvegarde illisible : {error}")
+            return False
+        if not isinstance(state, dict) or state.get("version") != 1:
+            print("ÉCHEC : version de sauvegarde inconnue.")
+            return False
+
+        # 1. Changer de carte (le joueur est remis au spawn par change_map).
+        map_index = int(state.get("map_index", 0))
+        if not self.world.change_map(map_index, self.player):
+            print(f"ÉCHEC : impossible de charger la carte #{map_index}.")
+            return False
+        self.game_map = self.world.game_map
+
+        # 2. Drapeaux de quête.
+        for name, value in state.get("flags", {}).items():
+            self.world.flag_set(name, bool(value))
+
+        # 3. Bougies + transformation.
+        self._candle_lit = set(
+            (float(x), float(y)) for (x, y) in state.get("candle_lit", [])
+        )
+        self._candle_lit_count = len(self._candle_lit)
+        self._monster2_transformed = bool(
+            state.get("monster2_transformed", False)
+        )
+
+        # 4. Monstre : recréé à sa position sauvée s'il est vivant.
+        total = (
+            self.combat_candle_total()
+            if state.get("map_name") == BOSS_COMBAT_MAP
+            else 0
+        )
+        monster_pos = state.get("monster_pos")
+        if monster_pos is not None and self._candle_lit_count < total:
+            self._monster = Monster(
+                float(monster_pos[0]),
+                float(monster_pos[1]),
+                speed=MONSTER_SPEED,
+            )
+        else:
+            self._monster = None
+
+        # 5. Position du joueur (après le spawn de change_map).
+        player = state.get("player", {})
+        self.player.x = float(player.get("x", 0.0))
+        self.player.y = float(player.get("y", 0.0))
+
+        # 6. Historique + garde _prev_map_name pour que _on_map_change
+        #    (appelé par update) ne réinitialise pas l'état.
+        self._action_history = list(state.get("action_history", []))
+        self._log_action("load")
+        self._prev_map_name = self.world.current_map_data.get("name")
+
+        print(
+            f"✓ État restauré depuis {path.name} — "
+            f"bougies {self._candle_lit_count}/{total} "
+            f"sur {state.get('map_name')} "
+            f"({len(self._action_history)} actions)."
+        )
+        return True
