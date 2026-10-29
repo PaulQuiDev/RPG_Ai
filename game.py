@@ -17,7 +17,7 @@ from settings import BASE_DIR, COLLISIONS_ENABLED_DEFAULT
 from behaviors import BEHAVIORS, go_to_map
 from player import Player
 from world import World
-from monster import Monster
+from monster import Monster, MONSTER_SPRITE, MONSTER_SPRITE_FINAL
 
 
 # --- Quête du monstre (Boss Combat) ------------------------------------------
@@ -508,14 +508,23 @@ class Game:
             return nx, ny
         return x, y
 
-    def _setup_monster(self):
-        """Crée le monstre (monster.png) au spawn de la carte de combat."""
-        x, y = self._get_monster_spawn()
-        self._monster = Monster(
+    def _create_monster(self, x, y):
+        """Crée le monstre (sprite + vitesse) selon l'état de transformation
+        (flag monster2_active posé par le trône)."""
+        transformed = bool(self.world.flag_get("monster2_active"))
+        return Monster(
             float(x),
             float(y),
-            speed=MONSTER_SPEED,
+            speed=MONSTER_SPEED2 if transformed else MONSTER_SPEED,
+            sprite_path=MONSTER_SPRITE_FINAL if transformed else MONSTER_SPRITE,
         )
+
+    def _setup_monster(self):
+        """Crée le monstre au spawn de la carte de combat. Sprite et
+        vitesse selon la transformation (monster2.png + rapide si le
+        trône a été interagi, sinon monster.png + lent)."""
+        x, y = self._get_monster_spawn()
+        self._monster = self._create_monster(x, y)
 
     def _reset_combat(self):
         """Touché par le monstre : remise en scène (monstre + bougies à zéro).
@@ -774,10 +783,8 @@ class Game:
         )
         monster_pos = state.get("monster_pos")
         if monster_pos is not None and self._candle_lit_count < total:
-            self._monster = Monster(
-                float(monster_pos[0]),
-                float(monster_pos[1]),
-                speed=MONSTER_SPEED,
+            self._monster = self._create_monster(
+                monster_pos[0], monster_pos[1]
             )
         else:
             self._monster = None
