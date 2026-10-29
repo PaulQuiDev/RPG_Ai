@@ -323,6 +323,7 @@ class SpriteTunerWindow:
         self.anchors: dict = {}                    # {d: (ax, ay)}
         self.active = ("face", 1)                  # (direction, col)
         self.mode = "crop"                         # "crop" ou "anchor"
+        self.read_only = False                     # True = mode lecture seule
         self.frames: dict = {}                     # {d: {col: Surface}}
         self.character_name = ""
         self.character_data = None
@@ -370,18 +371,22 @@ class SpriteTunerWindow:
 
         btns = tk.Frame(top)
         btns.pack(side="right", padx=8, pady=8)
-        tk.Button(btns, text="Réinitialiser", command=self.reset_character).pack(side="left", padx=(0, 4))
-        tk.Button(btns, text="Enregistrer", command=self.save).pack(side="left", padx=(0, 4))
+        self.reset_btn = tk.Button(btns, text="Réinitialiser (supprimer la config)", command=self.reset_character)
+        self.reset_btn.pack(side="left", padx=(0, 4))
+        self.save_btn = tk.Button(btns, text="Enregistrer dans l'aventure", command=self.save)
+        self.save_btn.pack(side="left", padx=(0, 4))
+        self.read_only_btn = tk.Button(btns, text="Vue seule (lecture)", command=self._toggle_read_only)
+        self.read_only_btn.pack(side="left", padx=4)
         tk.Button(btns, text="Quitter", command=self.root.destroy).pack(side="left", padx=4)
 
         mode = tk.Frame(self.root)
         mode.pack(fill="x", pady=2)
         self.crop_btn = tk.Button(
-            mode, text="Cutter : glisser une boîte sur la feuille",
+            mode, text="Mode Coupe : dessiner/modifier la boîte de sélection",
             command=lambda: self._set_mode("crop"))
         self.crop_btn.pack(side="left", padx=(8, 4))
         self.anchor_btn = tk.Button(
-            mode, text="Anchor : glisser le point rouge sur l'aperçu",
+            mode, text="Mode Pieds (anchor) : placer le point rouge (les pieds)",
             command=lambda: self._set_mode("anchor"))
         self.anchor_btn.pack(side="left", padx=4)
         self._set_mode("crop")
@@ -485,38 +490,67 @@ class SpriteTunerWindow:
             self.crop_btn.config(relief="sunken")
             self.anchor_btn.config(relief="flat")
             self.status_var.set(
-                "Mode CUTTER : glissez une boîte sur la feuille. "
-                "Flèches = déplacer (Shift = pas gros).")
+                "Mode COUPE : glissez une boîte sur la feuille pour la "
+                "dessiner. Flèches = déplacer de 1px · Shift+flèches = "
+                "ajuster la taille (L/A = largeur, H/B = hauteur).")
         else:
             self.anchor_btn.config(relief="sunken")
             self.crop_btn.config(relief="flat")
             self.status_var.set(
-                "Mode ANCHOR : glissez le point rouge sur l'aperçu.")
+                "Mode PIEDS (anchor) : glissez le point rouge sur l'aperçu "
+                "pour définir les pieds du personnage.")
 
     def _on_nudge(self, event) -> None:
-        """Décale la boîte de coupe active (flèches) ; Shift = pas gros."""
+        """Déplace ou redimensionne la boîte de coupe active, au pixel.
+
+        Flèches (sans Shift) : déplacer la boîte de 1 pixel.
+        Shift + flèches   : ajuster la taille de 1 pixel
+            G./A. = largeur, H/B. = hauteur.
+        """
         # 0x2 = KEY_SHIFT (constante tkinter non exposée par les stubs Pyright).
         shift_mask = 0x2
-        step = 32 if (event.modifiers & shift_mask) else 8
-        if event.keysym == "Left":
-            dx, dy = -step, 0
-        elif event.keysym == "Right":
-            dx, dy = step, 0
-        elif event.keysym == "Up":
-            dx, dy = 0, -step
-        elif event.keysym == "Down":
-            dx, dy = 0, step
+        is_shift = bool(event.modifiers & shift_mask)
+
+        if not is_shift:
+            # Déplacer
+            if event.keysym == "Left":
+                dx, dy = -1, 0
+            elif event.keysym == "Right":
+                dx, dy = 1, 0
+            elif event.keysym == "Up":
+                dx, dy = 0, -1
+            elif event.keysym == "Down":
+                dx, dy = 0, 1
+            else:
+                return
+            x, y, w, h = self.crops.get(self.active, (0, 0, 1, 1))
+            new_rect = _clamp_to_sheet((x + dx, y + dy, w, h),
+                                       self.sheet_w, self.sheet_h)
         else:
-            return
-        x, y, w, h = self.crops.get(self.active, (0, 0, 1, 1))
-        self.crops[self.active] = _clamp_to_sheet(
-            (x + dx, y + dy, w, h), self.sheet_w, self.sheet_h)
+            # Ajuster la taille (1px), en gardant le coin haut-gauche
+            x, y, w, h = self.crops.get(self.active, (0, 0, 1, 1))
+            if event.keysym == "Left":
+                w = max(1, w - 1)
+            elif event.keysym == "Right":
+                w = min(self.sheet_w, w + 1)
+            elif event.keysym == "Up":
+                h = max(1, h - 1)
+            elif event.keysym == "Down":
+                h = min(self.sheet_h, h + 1)
+            else:
+                return
+            new_rect = _clamp_to_sheet((x, y, w, h),
+                                       self.sheet_w, self.sheet_h)
+
+        self.crops[self.active] = new_rect
         self._build_frames()
         self._render_static()
         self._update_info()
+        x, y, w, h = new_rect
+        label = "taille" if is_shift else "position"
         self.status_var.set(
-            f"Cadre déplacé : {self.active[0]} [{self.active[1]}] "
-            f"= {self.crops[self.active]} (pas {step}px)")
+            f"Cadre {label} : {self.active[0]} [{self.active[1]}] "
+            f"= ({x},{y}) {w}x{h} (1px)")
 
     # ---------------- Sheet interactions ----------------
     def _select_cell_at(self, cx: int, cy: int) -> None:
@@ -699,14 +733,35 @@ class SpriteTunerWindow:
     def _update_info(self) -> None:
         x, y, w, h = self.crops.get(self.active, (0, 0, 1, 1))
         ax, ay = self.anchors.get(self.active[0], (0, 0))
+        ro = "   [MODE LECTURE SEULE]" if self.read_only else ""
         self.info_var.set(
             f"Cellule active : {self.active[0]} [{self.active[1]}]   "
-            f"Cutte (x,y,w,h) : {x},{y} {w}x{h}   "
-            f"Anchor : ({ax}, {ay})   "
-            f"Feuille {self.sheet_w}x{self.sheet_h}, mode={self.mode}")
+            f"Coupe (x,y,w,h) : {x},{y} {w}x{h}   "
+            f"Anchor : ({ax}, {ay})  [x = px depuis centre-haut, "
+            f"y = px depuis bord bas = pieds]   "
+            f"Feuille {self.sheet_w}x{self.sheet_h}, mode={self.mode}{ro}")
 
     # ---------------- Actions ----------------
+    def _toggle_read_only(self) -> None:
+        """Bascule entre mode ÉDITION (sauvegarde dans l'aventure) et
+        LECTURE (vue seule, sans modification)."""
+        self.read_only = not self.read_only
+        if self.read_only:
+            self.save_btn.config(state="disabled")
+            self.reset_btn.config(state="disabled")
+            self._set_mode(self.mode)
+            self.status_var.set(
+                "MODE LECTURE : lecture seule. Vous pouvez regarder la "
+                "config, mais pas la modifier.")
+        else:
+            self.save_btn.config(state="normal")
+            self.reset_btn.config(state="normal")
+            self._set_mode(self.mode)
+
     def reset_character(self) -> None:
+        if self.read_only:
+            self.status_var.set("Impossible : mode lecture seule.")
+            return
         name = self.character_name
         if not name or self.sheet is None:
             return
@@ -721,6 +776,9 @@ class SpriteTunerWindow:
         self.status_var.set(f"{name} : overrides supprimés, coupes réinitialisées.")
 
     def save(self) -> Path:
+        if self.read_only:
+            self.status_var.set("Impossible : mode lecture seule.")
+            return settings.SPRITE_CONFIGS_PATH
         name = self.character_name
         if not name:
             return settings.SPRITE_CONFIGS_PATH
