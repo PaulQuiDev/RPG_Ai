@@ -108,7 +108,7 @@ def select_adventure(screen, font):
                 elif event.key == pygame.K_DOWN:
                     selected = (selected + 1) % len(entries)
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    running = False
+                    return entries[selected][0]
 
         screen.fill((30, 30, 40))
         title_surf = font.render("Choisir une aventure", True, (240, 240, 240))
@@ -127,8 +127,6 @@ def select_adventure(screen, font):
             y += 46
         pygame.display.flip()
 
-    if running:
-        return entries[selected][0]
     return None
 
 
