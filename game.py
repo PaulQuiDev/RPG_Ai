@@ -273,8 +273,8 @@ class Game:
                 self._last_console_print = now
                 focus = self.game_map.get_focused_object(self.player)
                 target = (
-                    focus.get("action")
-                    or (focus.get("interaction") or {}).get("label", "")
+                    self.game_map._interaction_label(focus)
+                    or focus.get("action")
                 ) if focus else ""
                 print(
                     f"[debug] {self.player.name} "
@@ -329,7 +329,9 @@ class Game:
         focus = self.game_map.get_focused_object(self.player)
 
         if focus is not None:
-            target = focus.get("action") or focus.get("dest")
+            target = (
+                self.game_map._interaction_label(focus) or focus.get("dest")
+            )
             focus_line = f"  -> agir (I) sur : {target}"
         else:
             focus_line = None
@@ -427,8 +429,8 @@ class Game:
             box = obj["box"]
             pygame.draw.rect(screen, (255, 255, 0), box, 2)
             action = (
-                obj.get("action")
-                or (obj.get("interaction") or {}).get("label", "")
+                self.game_map._interaction_label(obj)
+                or obj.get("action")
                 or ""
             )
             if action:

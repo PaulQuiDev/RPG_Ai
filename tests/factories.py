@@ -92,13 +92,17 @@ def write_fake_fg(tmp_dir, blobs=()):
 
 
 def build_fake_one_world(tmp_dir, blocked=(), blue=(), name="Map A",
-                         fg=False, fg_blobs=()):
-    """Une carte (optionnel : couche de premier plan)."""
+                        fg=False, fg_blobs=(), interactions=None):
+    """Une carte fake (optionnel : couche de premier plan).
+    ``interactions`` : liste de dicts [{"pos": [x, y], "action": ...}]
+    pour lier des comportements à des objets bleus (validation)."""
     bg = _write(make_fake_background(), tmp_dir, "bg_a.png")
     mask = _write(make_fake_mask(blocked, blue), tmp_dir, "mask_a.png")
     m = {"name": name, "background": bg, "mask": mask}
     if fg:
         m["foreground"] = write_fake_fg(tmp_dir, fg_blobs)
+    if interactions is not None:
+        m["interactions"] = interactions
     return build_fake_world(tmp_dir, [m])
 
 

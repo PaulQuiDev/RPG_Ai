@@ -24,7 +24,7 @@ from settings import (
 class GameMap:
     def __init__(self, background_path, mask_path,
                  foreground_path=None, perspective=None,
-                 interactions=None, npcs=None):
+                 interactions=None, npcs=None, name=None):
         self.perspective = perspective or {
             "enabled": False,
             "top_scale": 1.0,
@@ -33,6 +33,7 @@ class GameMap:
         self.interactions = interactions or []
         # Personnage de la carte (NPC) : liste de dicts déclarée dans settings.
         self.npc_data = list(npcs or [])
+        self.name = name
 
         try:
             original = pygame.image.load(
@@ -89,6 +90,7 @@ class GameMap:
         # Objets interactifs (pixels bleus du masque) : extraits et
         # pré-rendus au chargement pour ne rien calculer par frame.
         self.interact_layer, self.interact_objects = self._extract_interactables()
+        self._validate_interactions()
 
         # Éléments de premier plan (composantes de la FG) : extraits et
         # pré-rendus (surface tight, alpha conservé).
@@ -96,6 +98,89 @@ class GameMap:
 
         # Personnages de la carte (NPC).
         self.npcs = self._build_npcs()
+
+    def _is_interactive(self, obj):
+        """Un objet bleu est « interactif » s'il est associé à un
+        comportement (action ou interaction dans self.interactions).
+        Sinon, c'est un simple objet décoratif (tinté, non jouable)."""
+        return bool(obj.get("action")) or obj.get("interaction")
+
+    def _interaction_label(self, obj):
+        """Nom lisible de l'objet : le nom (``name``) s'il existe, sinon
+        l'action, sinon vide. Sert à l'affichage « agir (I) sur : X »."""
+        name = obj.get("name")
+        if name:
+            return name
+        return obj.get("action", "") or obj.get("interaction", {}).get("label", "")
+
+    def count_action(self, action):
+        """Nombre d'objets interactifs de la carte ayant ``action``."""
+        count = 0
+        for obj in self.interact_objects:
+            if obj.get("action") == action:
+                count += 1
+        return count
+
+    def _validate_interactions(self):
+        """Solution globale : associe chaque interaction à un objet bleu
+        (tinté) à proximité, et valide la cohérence des deux côtés.
+
+        1) Chaque objet bleu doit avoir une action (sinon, c'est
+        « décoratif » => avertissement « sans comportement associé »).
+        2) Chaque interaction (dans self.interactions) doit toucher au
+        moins un objet bleu (sinon => avertissement « objet hors carte »).
+
+        Les avertissements sont loggés à la création de la carte et
+        accessibles via ``self.interaction_warnings``.
+        """
+        warnings = []
+        self.interaction_warnings = warnings
+
+        # 1) Associer chaque objet bleu à une interaction (par proximité).
+        for obj in self.interact_objects:
+            centerx, centery = obj["box"].centerx, obj["box"].centery
+            best = None
+            best_d = float("inf")
+            for inter in self.interactions:
+                px, py = inter["pos"]
+                d = math.hypot(px - centerx, py - centery)
+                if d < best_d:
+                    best_d = d
+                    best = inter
+            if best is not None and best_d <= INTERACT_MATCH_TOLERANCE:
+                obj["action"] = best.get("action") or obj.get("action")
+                if best.get("name"):
+                    obj["name"] = best["name"]
+                obj["interaction"] = dict(best)
+
+        # 2) Avertissement : objet bleu SANS comportement associé.
+        for obj in self.interact_objects:
+            if not self._is_interactive(obj):
+                warnings.append(
+                    f"{self.name} : objet bleu pos=({int(obj['box'].centerx)}, "
+                    f"{int(obj['box'].centery)}) sans comportement associé "
+                    f"(action={obj.get('action')!r}) — « agir (I) » restera "
+                    f"indisponible ; à lier dans settings.py."
+                )
+
+        # 3) Avertissement : interaction sans objet bleu à proximité.
+        for inter in self.interactions:
+            px, py = inter["pos"]
+            associated = False
+            for obj in self.interact_objects:
+                if self._is_interactive(obj):
+                    cx, cy = obj["box"].centerx, obj["box"].centery
+                    if math.hypot(px - cx, py - cy) <= INTERACT_MATCH_TOLERANCE:
+                        associated = True
+                        break
+            if not associated:
+                label = inter.get("action") or inter.get("name") or inter.get("pos")
+                warnings.append(
+                    f"{self.name} : interaction pos=({int(px)}, {int(py)}) "
+                    f"(action={inter.get('action')!r}) sans objet bleu associé "
+                    f"({self.name}) — vérifie la position dans settings.py."
+                )
+        return warnings
 
     def draw(self, screen, player=None, collisions=True):
         """Fond + NPC + couche FG derrière le joueur.
@@ -155,13 +240,20 @@ class GameMap:
 
     def get_focused_object(self, player):
         """Retourne l'objet interactif le plus proche du joueur
-        (dans la portée), ou None s'il n'y en a pas."""
+        (dans la portée), ou None s'il n'y en a pas.
+
+        Fixe le bug « agir (I) sur : None » : on ne considère QUE les
+        objets bleus interactifs (associés à un comportement). Un objet
+        bleu décoratif (sans action/interaction) n'est jamais retourné.
+        """
         if player is None or not self.interact_objects:
             return None
         px, py = player.x, player.y
         best = None
         best_d = INTERACT_PROXIMITY
         for obj in self.interact_objects:
+            if not self._is_interactive(obj):
+                continue
             d = math.hypot(px - obj["box"].centerx,
                            py - obj["box"].centery)
             if d < best_d:

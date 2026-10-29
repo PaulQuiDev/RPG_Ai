@@ -153,13 +153,49 @@ class TestGameMapPerspective(BaseTestCase):
         )
 
     def test_focused_object_in_range(self):
-        world = build_fake_one_world(self._tmp.name, blue=[(400, 400, 80, 80)])
+        world = build_fake_one_world(
+            self._tmp.name,
+            blue=[(400, 400, 80, 80)],
+            interactions=[{"pos": [440, 440], "action": "t"}],
+        )
         player = Player(
             420.0, 440.0,
             fake_player_data(self._tmp.name, self.fake_sheet_path)
         )
         obj = world.game_map.get_focused_object(player)
         self.assertIsNotNone(obj)
+        if obj is None:
+            self.fail("objet focalisé attendu")
+        self.assertEqual(obj.get("action"), "t")
+
+    def test_focused_object_skips_non_interactive(self):
+        # Un objet bleu SANS comportement n'est PAS focalisable.
+        world = build_fake_one_world(
+            self._tmp.name, blue=[(400, 400, 80, 80)]
+        )
+        player = Player(
+            420.0, 440.0,
+            fake_player_data(self._tmp.name, self.fake_sheet_path)
+        )
+        self.assertIsNone(world.game_map.get_focused_object(player))
+
+    def test_focused_object_prefers_interactive(self):
+        # Deux objets bleus dans la portée : le non-interactif est ignoré,
+        # on retourne l'interactif.
+        world = build_fake_one_world(
+            self._tmp.name,
+            blue=[(400, 400, 40, 40), (460, 400, 40, 40)],
+            interactions=[{"pos": [480, 420], "action": "t"}],
+        )
+        player = Player(
+            420.0, 440.0,
+            fake_player_data(self._tmp.name, self.fake_sheet_path)
+        )
+        obj = world.game_map.get_focused_object(player)
+        self.assertIsNotNone(obj)
+        if obj is None:
+            self.fail("objet focalisé attendu")
+        self.assertEqual(obj.get("action"), "t")
 
     def test_focused_object_none_far(self):
         world = build_fake_one_world(
@@ -176,6 +212,56 @@ class TestGameMapPerspective(BaseTestCase):
             self._tmp.name, blue=[(400, 400, 80, 80)]
         )
         self.assertIsNone(world.game_map.get_focused_object(None))
+
+    def test_validate_interactions_flags_unassociated_object(self):
+        # Objet bleu SANS comportement associé => avertissement.
+        world = build_fake_one_world(
+            self._tmp.name, blue=[(400, 400, 80, 80)]
+        )
+        warnings = world.game_map.interaction_warnings
+        self.assertTrue(any(
+            "sans comportement associé" in w for w in warnings
+        ))
+
+    def test_validate_interactions_flags_orphan_interaction(self):
+        # Interaction sans objet bleu à proximité => avertissement.
+        world = build_fake_one_world(
+            self._tmp.name,
+            interactions=[{"pos": [1000, 1000], "action": "t"}],
+        )
+        warnings = world.game_map.interaction_warnings
+        self.assertTrue(any(
+            "sans objet bleu associé" in w for w in warnings
+        ))
+
+    def test_interaction_label(self):
+        world = build_fake_one_world(self._tmp.name)
+        gm = world.game_map
+        self.assertEqual(
+            gm._interaction_label({"name": "Trône"}), "Trône"
+        )
+        self.assertEqual(
+            gm._interaction_label({"action": "go_forest"}), "go_forest"
+        )
+        self.assertEqual(
+            gm._interaction_label({"name": "", "action": "t"}), "t"
+        )
+        self.assertEqual(gm._interaction_label({}), "")
+
+    def test_count_action(self):
+        world = build_fake_one_world(
+            self._tmp.name,
+            blue=[(100, 100, 40, 40), (200, 100, 40, 40), (300, 100, 40, 40)],
+            interactions=[
+                {"pos": [120, 120], "action": "light_candle"},
+                {"pos": [220, 120], "action": "light_candle"},
+                {"pos": [320, 120], "action": "other"},
+            ],
+        )
+        gm = world.game_map
+        self.assertEqual(gm.count_action("light_candle"), 2)
+        self.assertEqual(gm.count_action("other"), 1)
+        self.assertEqual(gm.count_action("none"), 0)
 
 
 class TestGameMapSpawn(BaseTestCase):

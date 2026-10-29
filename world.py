@@ -45,6 +45,7 @@ class World:
             data.get("perspective"),
             data.get("interactions"),
             data.get("npcs"),
+            name=data.get("name"),
         )
 
     def find_spawn(self, game_map, radius=COLLISION_RADIUS):
