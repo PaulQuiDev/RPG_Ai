@@ -22,6 +22,7 @@ Options :
 """
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import pygame
@@ -212,9 +213,11 @@ def main():
     # --- Sélection de l'aventure -------------------------------------------
     if args.adv is not None:
         config_path = Path(str(args.adv))
+        print(f"Chargement de l'aventure : {config_path}", flush=True)
     else:
         config_path = select_adventure(screen, font)
         if config_path is None:
+            print("Aventure annulée, sortie.", file=sys.stderr, flush=True)
             pygame.quit()
             return
         config_path = Path(config_path)
@@ -223,6 +226,11 @@ def main():
     try:
         characters, maps, meta = load_adventure(config_path)
     except Exception as error:
+        console_msg = (
+            f"Erreur : impossible de charger l'aventure "
+            f"{config_path} — {type(error).__name__} : {error}"
+        )
+        print(console_msg, file=sys.stderr, flush=True)
         message = (
             "ERREUR : impossible de charger l'aventure.\n"
             f"fichier : {config_path}\n"
@@ -231,12 +239,14 @@ def main():
         )
         _show_error_window(screen, font, message)
         pygame.quit()
-        raise SystemExit(
-            f"Erreur : impossible de charger l'aventure {config_path} — {error}"
-        ) from error
+        sys.exit(1)
     pygame.display.set_caption(meta.get("window_title", WINDOW_TITLE))
 
     if not characters:
+        console_msg = (
+            f"Erreur : l'aventure {config_path} ne contient aucun personnage."
+        )
+        print(console_msg, file=sys.stderr, flush=True)
         message = (
             "ERREUR : l'aventure chargée ne contient aucun personnage.\n"
             f"fichier : {config_path}\n"
@@ -244,8 +254,12 @@ def main():
         )
         _show_error_window(screen, font, message)
         pygame.quit()
-        raise SystemExit("Aucun personnage dans l'aventure chargée.")
+        sys.exit(1)
     if not maps:
+        console_msg = (
+            f"Erreur : l'aventure {config_path} ne contient aucune carte."
+        )
+        print(console_msg, file=sys.stderr, flush=True)
         message = (
             "ERREUR : l'aventure chargée ne contient aucune carte.\n"
             f"fichier : {config_path}\n"
@@ -253,7 +267,7 @@ def main():
         )
         _show_error_window(screen, font, message)
         pygame.quit()
-        raise SystemExit("Aucune carte dans l'aventure chargée.")
+        sys.exit(1)
 
     # Le jeu s'exécute à la résolution logique (960x720) sur une surface
     # hors-écran ; main.py blitte (smoothscale + letterbox) cette surface
@@ -271,6 +285,11 @@ def main():
             save_path=args.save,
         )
     except Exception as error:
+        console_msg = (
+            f"Erreur : impossible d'initialiser le jeu — "
+            f"{type(error).__name__} : {error}"
+        )
+        print(console_msg, file=sys.stderr, flush=True)
         message = (
             "ERREUR : impossible d'initialiser le jeu.\n"
             f"raison  : {type(error).__name__} : {error}\n"
@@ -278,7 +297,9 @@ def main():
         )
         _show_error_window(screen, font, message)
         pygame.quit()
-        raise SystemExit(f"Erreur : impossible d'initialiser le jeu — {error}") from error
+        sys.exit(1)
+
+    print("Jeu initialisé, lancement...", flush=True)
 
     # --load : reprise de partie avant la boucle.
     if args.load:
@@ -319,6 +340,7 @@ def main():
         pygame.display.flip()
 
     pygame.quit()
+    print("Fin de la partie (fenêtre fermée).", flush=True)
 
 
 if __name__ == "__main__":
