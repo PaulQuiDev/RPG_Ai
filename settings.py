@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 
 BASE_DIR = Path(__file__).resolve().parent
+ADVENTURES_DIR = BASE_DIR / "adventures"
+
 
 # Masques SEG de la Forêt (défaut + alternée) et images de fond
 # (défaut + alternée).
@@ -112,186 +114,97 @@ def apply_sprite_overrides(data: dict) -> dict:
     return data
 
 
-# Personnages disponibles
-CHARACTERS = [
-    {
-        "name": "Femme",
-        "sprite": BASE_DIR / "asset/carater/woman.png",
-        "scale": 0.25,
-        "speed": 220,
-        "collision_radius": 5,
-    },
-    {
-        "name": "Monster",
-        "sprite": BASE_DIR / "asset/carater/monster.png",
-        "scale": 0.35,
-        "speed": 180,
-        "collision_radius": 4.5,
-    },
-]
+# ---------------------------------------------------------------------------
+# Chargement des aventures (JSON)
+# ---------------------------------------------------------------------------
+# Les données d'aventure (personnages + cartes) ne sont plus durcies dans ce
+# module : elles sont chargées depuis des fichiers JSON du répertoire
+# ``adventures/``. Chaque fichier est une aventure. Les chemins d'assets y
+# sont relatifs à la racine du projet (BASE_DIR) et résolus à la charge.
+def _resolve_asset(path_str):
+    """Résoudre un chemin d'asset (relatif ou absolu) vers un Path absolu.
 
-# Cartes disponibles
-MAPS = [
-    {
-        "name": "Village",
-        "background": BASE_DIR / "asset/world/vil1.png",
-        "mask": BASE_DIR / "asset/world/vil1SEG.png",
-        # Couche de premier plan optionnelle (éléments devant le joueur).
-        "foreground": BASE_DIR / "asset/world/vil1FG.png",
+    Les chemins relatifs sont interprétés relativement à ``BASE_DIR``.
+    """
+    p = Path(path_str)
+    if p.is_absolute():
+        return p
+    return BASE_DIR / p
 
-        # Comportements des objets bleus :
-        #   "pos"     = centre de l'objet (px, coordonnées fenêtre).
-        #   "action"  = clé dans behaviors.BEHAVIORS (comportement custom),
-        #               OU "dest" = nom de carte pour un téléport direct.
-        "interactions": [
-            # Grand bâtiment (left) -> change de carte vers la Forêt.
-            {"pos": [356, 305], "action": "go_forest"},
-        ],
 
-        "perspective": {
-            "enabled": True,
-            "top_scale": 0.70,
-            "bottom_scale": 1.00,
-        },
+def load_adventure(config_path=None):
+    """Charger une aventure depuis un fichier JSON.
 
-        "exits": {
-            "right": {
-                "map": "Forêt",
-                "spawn": (10, 400),
-            },
-        },
+    Args:
+        config_path : chemin vers le fichier JSON (str ou Path). Si ``None``,
+            charge l'aventure par défaut (``ADVENTURES_DIR / "demo-test.json"``).
 
-        # Personnages de la carte (NPC) — voir npc.py.
-        #   "static" : reste sur place ; "patrol" : suit la boucle "points".
-        #   "action" : clé de behaviors.BEHAVIORS déclenchée au contact.
-        "npcs": [
-            {"name": "Champignon 1", "sprite": BASE_DIR / "asset/carater/mush1.png", "pos": [400, 430], "message": "Un monstre est enfermé dans la maison en forêt, à droite. Fais attention, il te fonce dessus."},
-            {"name": "Champignon 2", "sprite": BASE_DIR / "asset/carater/mush2.png", "pos": [720, 400], "message": "Pour ouvrir la maison : le pilier en haut à gauche de la forêt (SEG 2). Ça ouvre le chemin vers le bord droit."},
-            {"name": "Champignon 3", "sprite": BASE_DIR / "asset/carater/mush3.png", "pos": [680, 450], "message": "Bonsoir."},
-            {"name": "Monstre", "sprite": BASE_DIR / "asset/carater/monster.png", "behavior": "patrol", "speed": 55, "scale": 0.35,
-             "message": "Grrhh !",
-             "points": [[478, 94], [500, 710]]},
-            {"name": "Champignon errant", "sprite": BASE_DIR / "asset/carater/mush5.png", "behavior": "patrol", "speed": 40, "scale": 0.2,
-             "message": "Hop...",
-             "points": [[53, 380], [900, 360], [900, 500], [30, 505]]},
-        ],
-    },
-    {
-        "name": "Forêt",
-        "background": FOREST_BG_DEFAULT,
-        "mask": FOREST_SEG_DEFAULT,
+    Returns:
+        Tuple ``(characters, maps, meta)`` ::
 
-        # Variantes d'actifs basculables à l'exécution (voir
-        # cycle_map_seg / cycle_map_bg / cycle_map_fg dans behaviors.py).
-        # Chaque liste contient au moins deux chemins ; l'actif courant
-        # est celui de la clé correspondante (mask/background), et le
-        # cycle passe au suivant en boucle.
-        "variants": {
-            "mask": [FOREST_SEG_DEFAULT, FOREST_SEG_ALT],
-            "background": [FOREST_BG_DEFAULT, FOREST_BG_ALT],
-        },
+            - ``characters`` : liste de dicts de personnages (champ ``sprite``
+              résolu en Path absolu).
+            - ``maps``       : liste de dicts de cartes (champs ``background``,
+              ``mask``, ``foreground`` et sprites des NPC résolus).
+            - ``meta``       : dict d'info (``name``, ``title``, ``window_title``,
+              ``start_map``).
 
-        # Comportements des objets bleus (carte courante) :
-        #   cycle_map_seg : le masque SEG bascule vers la variante suivante
-        #   cycle_map_bg  : l'image de fond bascule vers la variante suivante
-        # Les positions doivent correspondre au centre d'un objet bleu de
-        # la carte (dans INTERACT_MATCH_TOLERANCE).
-        "interactions": [
-            {"pos": [184, 154], "action": "cycle_map_seg"},
-            {"pos": [112, 227], "action": "cycle_map_bg"},
-        ],
+    Raises:
+        FileNotFoundError   : si le fichier JSON n'existe pas.
+        json.JSONDecodeError: si le fichier JSON est mal formé.
+    """
+    if config_path is None:
+        config_path = str(ADVENTURES_DIR / "demo-test.json")
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Aventure introuvable : {config_path}")
 
-        "perspective": {
-            "enabled": False,
-            "top_scale": 1.00,
-            "bottom_scale": 1.00,
-        },
+    with config_path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
 
-        "exits": {
-            "left": {
-                "map": "Village",
-                "spawn": (950, 437),
-            },
-            "right": {
-                "map": "Boss Combat",
-                "spawn": (500, 370),
-            },
-        },
-    },
-    {
-        "name": "Boss Combat",
-        "background": BASE_DIR / "asset/world/bossecombat.png",
-        "mask": BASE_DIR / "asset/world/bossecombatSEG.png",
+    if not isinstance(data, dict):
+        raise ValueError(f"Format d'aventure invalide (non-dict) : {config_path}")
 
-        # Les 5 bougies (centre de la pièce). Activer chaque bougie
-        # (action "light_candle", traitée dans game.py) fait progresser
-        # le combat ; les 5 allumées -> le monstre meurt et on bascule
-        # sur la carte "Post Combat".
-        "interactions": [
-            {"pos": [506, 224], "action": "light_candle"},
-            {"pos": [649, 325], "action": "light_candle"},
-            {"pos": [348, 330], "action": "light_candle"},
-            {"pos": [597, 495], "action": "light_candle"},
-            {"pos": [402, 498], "action": "light_candle"},
-        ],
+    def _load_character(entry):
+        out = dict(entry)
+        if isinstance(out.get("sprite"), str):
+            out["sprite"] = _resolve_asset(out["sprite"])
+        apply_sprite_overrides(out)
+        return out
 
-        "perspective": {
-            "enabled": False,
-            "top_scale": 1.00,
-            "bottom_scale": 1.00,
-        },
+    def _load_npc(entry):
+        out = dict(entry)
+        if isinstance(out.get("sprite"), str):
+            out["sprite"] = _resolve_asset(out["sprite"])
+        apply_sprite_overrides(out)
+        return out
 
-        # Sortie vers la forêt (échappatoire si le combat n'est pas fini).
-        "exits": {
-            "left": {
-                "map": "Forêt",
-                "spawn": (800, 360),
-            },
-        },
-    },
-    {
-        "name": "Post Combat",
-        "background": BASE_DIR / "asset/world/bossepasscombat.png",
-        "mask": BASE_DIR / "asset/world/bossepasscombatSEG.png",
+    def _load_map(entry):
+        out = dict(entry)
+        for key in ("background", "mask", "foreground"):
+            if isinstance(out.get(key), str):
+                out[key] = _resolve_asset(out[key])
+        variants = out.get("variants")
+        if isinstance(variants, dict):
+            out["variants"] = {
+                key: [_resolve_asset(p) for p in values]
+                for key, values in variants.items()
+            }
+        if out.get("npcs"):
+            out["npcs"] = [_load_npc(n) for n in out["npcs"]]
+        return out
 
-        # Le trône (droite) : interagir transforme le monstre en monster2
-        # (behavior "transform_monster") et pose le drapeau "monster2_active"
-        # (quand on revient au village, tous les PNJ fuient).
-        # Interactable seulement après la victoire (condition monster_defeated).
-        "interactions": [
-            {
-                "pos": [860, 545],
-                "action": "transform_monster",
-                "name": "Trône",
-                "requires": ["monster_defeated"],
-                "flag": "monster2_active",
-                "flag_value": True,
-            },
-        ],
+    characters = [_load_character(c) for c in data.get("characters", [])]
+    maps = [_load_map(m) for m in data.get("maps", [])]
 
-        "perspective": {
-            "enabled": False,
-            "top_scale": 1.00,
-            "bottom_scale": 1.00,
-        },
+    meta = {
+        "name": data.get("name", config_path.stem),
+        "title": data.get("title", config_path.stem),
+        "window_title": data.get("window_title", WINDOW_TITLE),
+        "start_map": data.get("start_map"),
+    }
 
-        # On quitte la carte par la gauche (vers le village).
-        "exits": {
-            "left": {
-                "map": "Village",
-                "spawn": (950, 437),
-            },
-        },
-    },
-]
-
-# Appliquer les overrides du tuner à tous les personnages (joueur et NPC)
-# pour qu'ils soient pris en compte dès la construction des Player / Npc.
-for _character in CHARACTERS:
-    apply_sprite_overrides(_character)
-for _map in MAPS:
-    for _npc in _map.get("npcs", []):
-        apply_sprite_overrides(_npc)
+    return characters, maps, meta
 
 WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 720
@@ -377,3 +290,5 @@ NPC_INTERACT_COOLDOWN = 3.0
 # --- Couche de premier plan (FG) ---
 # Surface min de composante FG conservée (filtre le bruit).
 FG_MIN_AREA = 50
+# Chargement de l'aventure par défaut (à la charge du module).
+CHARACTERS, MAPS, ADVANTURE_META = load_adventure()

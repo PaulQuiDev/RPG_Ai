@@ -1,6 +1,9 @@
-"""Point d'entrée du jeu : initialisation pygame, création de `Game`,
-boucle (clock → événements → update → render). Toute la logique de jeu
-vit dans `game.Game`.
+"""Point d'entrée du jeu : initialisation pygame, sélection de l'aventure,
+création de `Game`, boucle (clock → événements → update → render). Toute la
+logique de jeu vit dans `game.Game`.
+
+Les données d'aventure (personnages + cartes) sont chargées depuis les
+fichiers JSON du répertoire ``adventures/`` (voir ``settings.load_adventure``).
 
 Options :
   --debug       affiche la carte de collision, les boîtes d'interaction
@@ -14,16 +17,19 @@ Options :
                 Défaut : <projet>/saves/game.json.
   --load PATH   fichier à charger au démarrage (reprise de partie).
                 Défaut : sauvegarde par défaut.
+  --adv PATH    chemin d'un fichier d'aventure (JSON) à lancer directement
+                (bypass du menu de sélection).
 """
 import argparse
 import re
+from pathlib import Path
 
 import pygame
 
 from settings import (
+    ADVENTURES_DIR,
     COLLISIONS_ENABLED_DEFAULT,
-    CHARACTERS,
-    MAPS,
+    load_adventure,
     WINDOW_BACKGROUND,
     WINDOW_HEIGHT,
     WINDOW_TITLE,
@@ -57,12 +63,75 @@ def _blit_rect(game_w, game_h, win_w, win_h):
     return ((win_w - bw) // 2, (win_h - bh) // 2, bw, bh)
 
 
-def main():
-    if not CHARACTERS:
-        raise SystemExit("Aucun personnage défini dans settings.py.")
-    if not MAPS:
-        raise SystemExit("Aucune carte définie dans settings.py.")
+def _list_adventures(adv_dir):
+    """Retourne la liste des aventures disponibles :
+    [(Path vers le fichier JSON, titre), ...], triés par nom."""
+    if not adv_dir.exists():
+        return []
+    results = []
+    for f in sorted(adv_dir.glob("*.json")):
+        try:
+            with f.open("r", encoding="utf-8") as fh:
+                import json
+                data = json.load(fh)
+            title = data.get("title", f.stem)
+        except (OSError, ValueError):
+            title = f.stem
+        results.append((f, title))
+    return results
 
+
+def select_adventure(screen, font):
+    """Menu de sélection des aventures.
+
+    Retourne le ``Path`` du fichier JSON choisi, ou ``None`` pour quitter.
+    Navigation : flèches ↑/↓ | Entrée : lancer | Échap : quitter.
+    """
+    small = pygame.font.SysFont("sans", 16)
+    entries = _list_adventures(ADVENTURES_DIR)
+    if not entries:
+        print("Aucune aventure trouvée dans", ADVENTURES_DIR, "— sortie.")
+        return None
+
+    selected = 0
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_UP:
+                    selected = (selected - 1) % len(entries)
+                elif event.key == pygame.K_DOWN:
+                    selected = (selected + 1) % len(entries)
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    running = False
+
+        screen.fill((30, 30, 40))
+        title_surf = font.render("Choisir une aventure", True, (240, 240, 240))
+        screen.blit(title_surf, (40, 70))
+        sub_surf = small.render(
+            "Flèches : naviguer | Entrée : lancer | Échap : quitter",
+            True,
+            (150, 150, 160),
+        )
+        screen.blit(sub_surf, (40, 120))
+        y = 170
+        for i, (path, title) in enumerate(entries):
+            color = (255, 220, 100) if i == selected else (160, 160, 170)
+            surf = font.render(f"{i + 1}. {title}", True, color)
+            screen.blit(surf, (40, y))
+            y += 46
+        pygame.display.flip()
+
+    if running:
+        return entries[selected][0]
+    return None
+
+
+def main():
     parser = argparse.ArgumentParser(description="Jeu RPG (pygame)")
     parser.add_argument(
         "--debug",
@@ -92,6 +161,12 @@ def main():
         help="chemin du fichier à charger au démarrage (reprise de partie). "
         "Défaut : sauvegarde par défaut.",
     )
+    parser.add_argument(
+        "--adv",
+        metavar="PATH",
+        help="chemin d'un fichier d'aventure (JSON) à lancer directement "
+        "(bypass du menu de sélection).",
+    )
     args = parser.parse_args()
 
     if args.window and args.fullscreen:
@@ -115,6 +190,26 @@ def main():
     pygame.display.set_caption(WINDOW_TITLE)
     font = pygame.font.SysFont("sans", 18)
 
+    # --- Sélection de l'aventure -------------------------------------------
+    if args.adv is not None:
+        config_path = Path(str(args.adv))
+    else:
+        config_path = select_adventure(screen, font)
+        if config_path is None:
+            pygame.quit()
+            return
+        config_path = Path(config_path)
+
+    characters, maps, meta = load_adventure(config_path)
+    pygame.display.set_caption(meta.get("window_title", WINDOW_TITLE))
+
+    if not characters:
+        pygame.quit()
+        raise SystemExit("Aucun personnage dans l'aventure chargée.")
+    if not maps:
+        pygame.quit()
+        raise SystemExit("Aucune carte dans l'aventure chargée.")
+
     # Le jeu s'exécute à la résolution logique (960x720) sur une surface
     # hors-écran ; main.py blitte (smoothscale + letterbox) cette surface
     # dans la fenêtre. Toute la logique de jeu (coordonnées, HUD, sprites,
@@ -124,8 +219,8 @@ def main():
         game = Game(
             game_surface,
             font,
-            CHARACTERS,
-            MAPS,
+            characters,
+            maps,
             collisions_enabled=COLLISIONS_ENABLED_DEFAULT,
             debug=args.debug,
             save_path=args.save,
