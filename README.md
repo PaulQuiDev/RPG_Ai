@@ -32,6 +32,8 @@ cd ~/Bureau/RPG_Ai
 .venv/bin/python main.py --window 800x600 # fenêtre custom (résolution logique 960x720, smoothscale + letterbox)
 .venv/bin/python main.py --fullscreen     # plein écran (960x720 étendue au moniteur)
 .venv/bin/python main.py --debug          # + carte de collision, itboxes, position joueur
+.venv/bin/python main.py --save PATH      # chemin du fichier de sauvegarde (clé S)
+.venv/bin/python main.py --load PATH      # reprise de partie : charge PATH au démarrage
 .venv/bin/python smoke_npc.py             # test headless (7 vérifs, sans fenêtre)
 ```
 
@@ -111,7 +113,7 @@ RPG_Ai/
 
 ### Progression des tâches à envisager (✅ = fait · ⬜ = à faire)
 
-**Progression : 8 / 10** — ✅✅✅✅✅✅✅✅⬜⬜
+**Progression : 9 / 10** — ✅✅✅✅✅✅✅✅✅⬜
 
 - ✅ Interface simple pour ajuster les settings de coupe de chaque personnage
   (joueur ou NPC) — la taille/position de la feuille varie suite à la génération
@@ -146,8 +148,13 @@ RPG_Ai/
   Boss Combat (nouveau monstre, bougies à zéro), sur les cartes réelles ; +
   5 tests `TestClampToSheet`. (`tests/test_full_quest.py`,
   `tests/test_sprite_tuner.py`)
-- ⬜ Sauvegarde / chargement exportable & importable : historique d'actions +
-  assets, format JSON (sauvegarder / recharger l'état du jeu).
+- ✅ Sauvegarde / chargement exportable & importable : historique d'actions +
+  état du jeu, format JSON. `Game.save(path)` / `Game.load(path)` (chemin par
+  défaut `saves/game.json`, configurable) : sauvegardent / restaurent fidèlement
+  la carte, le joueur, les drapeaux, les bougies, le monstre, la transformation
+  et l'historique (max 200 actions, version 1) ; robuste face à un fichier
+  absent, corrompu ou inconnu. Clés S / L en jeu + options CLI `--save` /
+  `--load` (reprise de partie au démarrage). (`game.py`, `main.py`)
 - ⬜ Machine à états des monstres : les ennemis patrouillent seulement ; ajouter
   poursuite / attaque (voir §1 « IA des ennemis »).
 
@@ -157,7 +164,6 @@ RPG_Ai/
   (tiles) + outil de calibration, pour ne pas casser la collision si l'art change.
 - **Pas de gestion d'assets** : centraliser chargement/validation/cache dans un
   manager d'assets.
-- **Sauvegarde / chargement** : aucune persistance d'état pour l'instant.
 - **Pipeline IA pour les assets** : lier la génération Krea2/Qwen au projet
   (validation des sheets, découpe automatique, insertion dans `settings.py`).
 - **IA des ennemis** :  ajouter santé.
