@@ -480,6 +480,53 @@ class Game:
             )
             screen.blit(n_txt, (nx + 6, ny - 24))
 
+        # Chemin A* prévu du monstre (ligne blanche + flèche vers le joueur).
+        # Affiché uniquement en --debug : aide à voir où le monstre va.
+        if self._monster is not None:
+            self._draw_monster_path(screen, self._monster)
+
+    def _draw_monster_path(self, screen, monster):
+        """Dessine le chemin A* prévu du monstre.
+
+        Une ligne blanche relie la position courante du monstre à chaque
+        waypoint du chemin A*, puis une petite flèche pointe dans la
+        direction finale (vers le joueur). N'est affiché qu'en --debug.
+        """
+        path = getattr(monster, "_path", None) or []
+        if not path:
+            return
+        pts = [(round(monster.x), round(monster.y))] + [
+            (round(wx), round(wy)) for (wx, wy) in path
+        ]
+        if len(pts) < 2:
+            return
+        # Ligne blanche reliant chaque waypoint.
+        for i in range(len(pts) - 1):
+            pygame.draw.line(
+                screen, (255, 255, 255), pts[i], pts[i + 1], 2
+            )
+        # Flèche à la fin du trajet (vers le joueur).
+        self._draw_arrowhead(screen, pts[-2], pts[-1])
+
+    def _draw_arrowhead(self, screen, start, end):
+        """Petite flèche (triangle) de ``start`` vers ``end``."""
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        dist = math.hypot(dx, dy)
+        if dist < 1.0:
+            return
+        ux, uy = dx / dist, dy / dist
+        head_len = 14.0
+        wing = 5.0
+        # Base de la flèche (derrière la pointe, sur la direction).
+        base_x = end[0] - ux * head_len
+        base_y = end[1] - uy * head_len
+        # Décalages perpendiculaires pour les ailes.
+        px, py = -uy, ux
+        p1 = (base_x + px * wing, base_y + py * wing)
+        p2 = (base_x - px * wing, base_y - py * wing)
+        pygame.draw.polygon(screen, (255, 255, 255), [end, p1, p2], 0)
+
     # -- Quête du monstre (Boss Combat) -------------------------------------
 
     def _on_map_change(self):

@@ -31,7 +31,8 @@ cd ~/Bureau/RPG_Ai
 .venv/bin/python main.py                 # jeu (fenêtre 960x720)
 .venv/bin/python main.py --window 800x600 # fenêtre custom (résolution logique 960x720, smoothscale + letterbox)
 .venv/bin/python main.py --fullscreen     # plein écran (960x720 étendue au moniteur)
-.venv/bin/python main.py --debug          # + carte de collision, itboxes, position joueur
+.venv/bin/python main.py --debug          # + carte de collision, itboxes, position joueur,
+                                          #   chemin A* prévu du monstre (ligne blanche + flèche)
 .venv/bin/python main.py --save PATH      # chemin du fichier de sauvegarde (clé S)
 .venv/bin/python main.py --load PATH      # reprise de partie : charge PATH au démarrage
 .venv/bin/python smoke_npc.py             # test headless (7 vérifs, sans fenêtre)
@@ -121,9 +122,9 @@ RPG_Ai/
 ### Problèmes restants (bugs) — ordre de priorité
 | P | Problème | État |
 |---|----------|------|
-| P1 | Flag `--debug` ne marche plus et le mettre dans les testes il doit marcher si maudification sytemme | ❌ à corriger |
+| P1 | Flag `--debug` ne marche plus et le mettre dans les testes il doit marcher si maudification sytemme | ✅ RESOLU (bug `interaction=None` corrigé + affichage du chemin A* du monstre en ligne blanche + flèche) |
 | P4 | Après le boss fight, l'interaction avec le **siège** doit déclencher la
-      transformation `monster2` du jouer de pas du monstre. À vérifier : le drapeau `monster2_active` est-
+      transformation `monster2` du joueur de pas du monstre. À vérifier : le drapeau `monster2_active` est-
       il bien levé par le siège ? | ⚠️ à vérifier |
 | P5 | Revenir sur la scène après le combat ne permet **pas de refaire le
       combat** (monstre non respawné). passage a la map Post Combat si on rerentre par la foret | ❌ à corriger |
@@ -168,9 +169,8 @@ P2 le mosntrer peut toujour ce bloquer en marchan dans le décort ou bougie, le 
 - **Hébergement web** : migrer du GitHub Pages vers un hébergement web.
 
 ### Prochaines étapes (ordre de priorité)
-1. **P1** — corriger le flag `--debug` (vérifier `main.py` + `game.py`).
-2. **P4** — vérifier que le **siège** lève bien `monster2_active` (ajouter un
+1. **P4** — vérifier que le **siège** lève bien `monster2_active` (ajouter un
    test du drapeau dans `tests/`).
-3. **P5** — respawn du monstre à la re-sélection de la scène post-combat.
-4. **P6** — validation des objets bleus (warning / erreur si position manquante).
-5. **P7** — IA des ennemis (machine à états).
+2. **P5** — respawn du monstre à la re-sélection de la scène post-combat.
+3. **P6** — validation des objets bleus (warning / erreur si position manquante).
+4. **P7** — IA des ennemis (machine à états).

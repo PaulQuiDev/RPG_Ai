@@ -111,7 +111,14 @@ class GameMap:
         name = obj.get("name")
         if name:
             return name
-        return obj.get("action", "") or obj.get("interaction", {}).get("label", "")
+        # Robuste à ``interaction`` == None (objet décoratif) : la clé peut
+        # exister avec pour valeur None, le défaut ``{}`` ne s'applique donc
+        # que si la clé est ABSENT.
+        action = obj.get("action") or ""
+        interaction = obj.get("interaction")
+        if isinstance(interaction, dict):
+            return action or interaction.get("label", "")
+        return action
 
     def count_action(self, action):
         """Nombre d'objets interactifs de la carte ayant ``action``."""
