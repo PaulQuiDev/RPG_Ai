@@ -3,7 +3,7 @@
 Couvre la bonne exécution des objets à travers tout le cycle :
 Village -> Forêt -> Boss Combat (5 bougies) -> Post Combat (trône)
 -> Village (transformation + fuite des PNJ) -> re-entrée Boss Combat
-(nouveau monstre, bougies à zéro).
+(monstre déjà vaincu : pas de respawn, plus de bougies).
 
 C'est aussi le test du compteur HUD « Bougies : x/5 » (pas /10)
 et du cycle sauvegarde / chargement de l'état du jeu (JSON).
@@ -115,13 +115,15 @@ class TestFullQuest(BaseTestCase):
             any(n.behavior == "flee" for n in self.game.game_map.npcs)
         )
 
-        # 7) Re-entrée dans le Boss Combat : nouveau monstre, bougies à zéro
-        #    (persistance du reset — le bug « en bosse après le retour »).
+        # 7) Re-entrée dans le Boss Combat : le monstre est DÉJÀ vaincu,
+        #    donc AUCUN respawn (pas de monstre, pas de bougies).
+        #    (Persistance de l'état vaincu : pas de « réaffrontement ».)
         self._enter(2)
         self.assertEqual(
             self.game.world.current_map_data["name"], BOSS_COMBAT_MAP
         )
-        self.assertIsNotNone(self.game._monster)
+        self.assertIsNone(self.game._monster)
+        self.assertTrue(self.game.world.flag_get("monster_defeated"))
         self.assertEqual(self.game._candle_lit_count, 0)
         self.assertEqual(len(self.game._candle_lit), 0)
 
@@ -141,12 +143,12 @@ class TestFullQuest(BaseTestCase):
         self.game.update(0.016)
         self.game.update(0.016)
 
-    def test_real_navigation_respawn(self):
-        """P5 : la ré-entrée dans le Boss Combat via le flux de navigation
-        réel (exits : Post Combat → Village → Forêt → Boss Combat) respawn
-        le monstre et reset les bougies, comme la re-sélection directe.
-        (Le bug P5 : « la map doit rester celle du post-combat » / re-entrée
-         par la forêt. )"""
+    def test_real_navigation_no_respawn_after_victory(self):
+        """P5 (fix) : la ré-entrée dans le Boss Combat via le flux de
+        navigation réel (exits : Post Combat → Village → Forêt → Boss
+        Combat) ne respawn PAS le monstre déjà vaincu (pas de monstre,
+        pas de bougies), comme la re-sélection directe. (Le bug P5 :
+         « la map doit rester celle du post-combat » / re-entrée par la forêt. )"""
         # Boss Combat : tuer le monstre -> Post Combat.
         self._enter(2)
         self.assertEqual(
@@ -170,12 +172,13 @@ class TestFullQuest(BaseTestCase):
         self.assertEqual(
             self.game.world.current_map_data["name"], "Forêt"
         )
-        # Forêt (bordure droite) -> Boss Combat : respawn du monstre.
+        # Forêt (bordure droite) -> Boss Combat : pas de respawn (monstre déjà vaincu).
         self._edge_right()
         self.assertEqual(
             self.game.world.current_map_data["name"], BOSS_COMBAT_MAP
         )
-        self.assertIsNotNone(self.game._monster)
+        self.assertIsNone(self.game._monster)
+        self.assertTrue(self.game.world.flag_get("monster_defeated"))
         self.assertEqual(self.game._candle_lit_count, 0)
         self.assertEqual(len(self.game._candle_lit), 0)
 

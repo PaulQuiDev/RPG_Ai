@@ -552,7 +552,9 @@ class Game:
             self._candle_lit = set()
             self._candle_lit_count = 0
             self._npc_flee_applied = False
-            if curr == BOSS_COMBAT_MAP:
+            if curr == BOSS_COMBAT_MAP and not self.world.flag_get(
+                "monster_defeated"
+            ):
                 self._setup_monster()
 
     def _get_monster_spawn(self):
@@ -606,6 +608,12 @@ class Game:
     def _light_candle(self, focus):
         """Allume une bougie (centre de l'objet focalisé). Les 5 bougies
         allumées -> le monstre meurt et on bascule sur la carte Post Combat."""
+        if self.world.flag_get("monster_defeated"):
+            print(
+                "Le monstre est déjà vaincu : combat terminé, "
+                "pas besoin de bougies."
+            )
+            return
         cx = round(focus["box"].centerx)
         cy = round(focus["box"].centery)
         key = (cx, cy)
@@ -625,7 +633,11 @@ class Game:
 
     def _defeat_monster(self):
         """Le monstre meurt : on le retire, on pose le drapeau
-        monster_defeated et on bascule sur la carte Post Combat."""
+        monster_defeated et on bascule sur la carte Post Combat.
+        
+        Idempotent : si le monstre est déjà vaincu, rien à faire."""
+        if self.world.flag_get("monster_defeated"):
+            return
         self._monster = None
         self.world.flag_set("monster_defeated", True)
         self._log_action("monster_defeated")
@@ -724,14 +736,20 @@ class Game:
         if self.world.current_map_data.get("name") != BOSS_COMBAT_MAP:
             return
         w, h = self.screen.get_size()
-        # Compteur de bougies (haut à droite) : le TOTAL est le nombre
-        # d'objets light_candle, pas le nombre d'objets bleus totaux
-        # (fix du bug « Bougies : x/10 » au lieu de « x/5 »).
-        count = self._candle_lit_count
-        total = self.combat_candle_total()
-        label = self.font.render(
-            f"Bougies : {count}/{total}", True, (255, 255, 150)
-        )
+        if self.world.flag_get("monster_defeated"):
+            # Monstre vaincu : pas de bougies à allumer, combat terminé.
+            label = self.font.render(
+                "Monstre vaincu — combat terminé", True, (255, 255, 150)
+            )
+        else:
+            # Compteur de bougies (haut à droite) : le TOTAL est le
+            # nombre d'objets light_candle, pas le nombre d'objets
+            # bleus totaux (fix du bug « Bougies : x/10 » au lieu de « x/5 »).
+            count = self._candle_lit_count
+            total = self.combat_candle_total()
+            label = self.font.render(
+                f"Bougies : {count}/{total}", True, (255, 255, 150)
+            )
         label_bg = pygame.Surface(
             (label.get_width() + 12, label.get_height() + 8), pygame.SRCALPHA
         )

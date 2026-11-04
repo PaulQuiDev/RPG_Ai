@@ -94,7 +94,7 @@ RPG_Ai/
   chemin A*. Détection sur le **déplacement réel**. Tests : `TestMonsterRecovery`
   (5 tests). |
 | **Transformation monster2 (P4)** | ✅ Le **siège** lève `monster2_active` et transforme le **JOUEUR** en\n  boss (`monster2.png` + vitesse 180) — **pas le monstre** (celui-ci reste\n  normal). Détection dérivée du drapeau : synchronisée à chaque frame dans\n  `update()` et re-appliquée au chargement ; les PNJ du village fuient le\n  joueur-boss. Tests : `test_full_quest.py` (trône → flag → joueur transformé),\n  `test_monster.py` (`test_create_monster_always_normal`). |
-| **Quête complète (P5)** | ✅ RESOLU — la boucle complète Village → Forêt → Boss Combat (5 bougies) → Post Combat (trône) → Village (transformation + fuite des PNJ) → re-entrée Boss Combat (nouveau monstre, bougies à zéro) fonctionne, y compris via la navigation réelle (exits) ; la carte reste celle du post-combat ; le reset complet (monstre recréé, bougies à zéro) est appliqué à chaque entrée dans le Boss Combat. Tests : `test_full_quest.py` (`test_full_quest_flow`, `test_real_navigation_respawn`). |
+| **Quête complète (P5)** | ✅ RESOLU — la boucle complète Village → Forêt → Boss Combat (5 bougies) → Post Combat (trône) → Village (transformation + fuite des PNJ) → re-entrée Boss Combat fonctionne, y compris via la navigation réelle (exits) ; la carte reste celle du post-combat ; **une fois vaincu (5 bougies), le monstre ne respawne plus** : plus de respawn, plus de bougies (flag `monster_defeated` persistant). Tests : `test_full_quest.py` (`test_full_quest_flow`, `test_real_navigation_no_respawn_after_victory`). |
 | **Clamping du bord (marge sprite)** | ✅ Les PNJ ne «
   disparaissent » plus contre le bord de la carte : la position des pieds
   est clampée à une marge **calculée** à partir de la taille réelle du
@@ -145,14 +145,16 @@ RPG_Ai/
 | P1 | Flag `--debug` ne marche plus et le mettre dans les testes il doit marcher si maudification sytemme | ✅ RESOLU (bug `interaction=None` corrigé + affichage du chemin A* du monstre en ligne blanche + flèche) |
 | P2 | Le monstre peut toujours se bloquer dans un **mur, un décor ou une bougie** (en marchant dans l'impasse). Le faire reculer ou le pousser pour le débloquer ; il ne doit plus rester coincé. | ✅ RESOLU — détection sur le **déplacement réel** (pas de mouvement pendant `STUCK_THRESHOLD` = 1,5 s) : `_back_up` (recul/poussée vers une case praticable) ou snap hors de l'obstacle (`_unstick`), puis recompute du chemin A*. Tests : `TestMonsterRecovery`. |
 | P4 | Après le boss fight, l'interaction avec le **siège** doit déclencher la transformation `monster2` du **joueur** (pas du monstre). | ✅ RESOLU — le trône lève `monster2_active` et transforme le **joueur** (monster2.png + vitesse 180) ; le monstre reste normal (monster.png, MONSTER_SPEED). Les PNJ du village fuient le joueur-boss. Tests : `test_full_quest.py`, `test_monster.py` (`test_create_monster_always_normal`). |
-| P5 | Revenir sur la scène après le combat doit permettre de **refaire le
-      combat** (monstre respawné) ; la carte doit rester celle du
-      post-combat (re-entrée par la forêt). | ✅ RESOLU — reset complet
-      (monstre recréé, bougies à zéro) appliqué à chaque entrée dans le
-      Boss Combat via `_on_map_change` ; la victoire passe à « Post Combat
-      » (`_defeat_monster`) et la carte y reste (trône, transformation).
-      Tests : `test_full_quest.py` (`test_full_quest_flow`,
-      `test_real_navigation_respawn`). |
+| P5 | Revenir sur la scène après le combat **ne doit PAS** réaffronter le
+      monstre déjà vaincu (pas de respawn, pas de bougies) ; la carte doit
+      rester celle du post-combat (re-entrée par la forêt). | ✅ RESOLU —
+      une fois vaincu, le monstre ne respawne plus à chaque ré-entrée : le
+      spawn dans `_on_map_change` est gated par le flag `monster_defeated`,
+      les bougies ne font plus rien (`_light_candle` no-op) et le HUD
+      affiche « Monstre vaincu — combat terminé ». La victoire passe à
+      « Post Combat » (`_defeat_monster`) et la carte y reste (trône,
+      transformation). Tests : `test_full_quest.py` (`test_full_quest_flow`,
+      `test_real_navigation_no_respawn_after_victory`). |
 | P6 | Objet « zone bleu » défini dans `settings` sans position doit retourner
       un warning / erreur ; ou position non correcte (hors carte). | ✅ RESOLU —
       validation globale au chargement (`_sanitize_interactions`) :
