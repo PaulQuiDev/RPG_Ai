@@ -160,6 +160,12 @@ class Npc:
         """Met à jour le comportement et le cooldown d'interaction."""
         self.last_player = player
         self.interact_cooldown = max(0.0, self.interact_cooldown - dt)
+        # **Clamping global** : quel que soit le comportement (static,
+        # patrol, flee), le NPC reste dans la zone visible (sprite jamais
+        # clipé par le bord de la fenêtre). C'est la solution générale :
+        # les PNJ ne « disparaissent » plus contre le bord, et ce pour
+        # tous les types de PNJ sur toutes les cartes.
+        self.x, self.y = self._clamp_to_view(self.x, self.y, game_map)
         if self.behavior == "flee":
             self._flee(dt, game_map, player)
         elif self.behavior == "patrol" and self.path:
@@ -182,8 +188,7 @@ class Npc:
             uy = dx / max(d, 1.0)
             step = self.speed * dt
             cand_x, cand_y = ux * step, uy * step
-            nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
-            ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+            nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
             if not self._is_blocked(nx, ny, game_map, player):
                 self._move_to(nx, ny, cand_x, cand_y, dt)
             else:
@@ -192,8 +197,7 @@ class Npc:
         ux, uy = dx / d, dy / d
         step = self.speed * dt
         cand_x, cand_y = ux * step, uy * step
-        nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
-        ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+        nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
         if not self._is_blocked(nx, ny, game_map, player):
             self._move_to(nx, ny, cand_x, cand_y, dt)
             return
@@ -201,8 +205,7 @@ class Npc:
         for sign in (1.0, -1.0):
             cand_x = (-uy * sign) * step * 0.7
             cand_y = (ux * sign) * step * 0.7
-            nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
-            ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+            nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
             if not self._is_blocked(nx, ny, game_map, player):
                 self._move_to(nx, ny, cand_x, cand_y, dt)
                 return
@@ -236,8 +239,7 @@ class Npc:
 
         # 1) Vers le but.
         cand_x, cand_y = ux * step, uy * step
-        nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
-        ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+        nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
         if not self._is_blocked(nx, ny, game_map, player):
             self._move_to(nx, ny, cand_x, cand_y, dt)
             self._stuck_time = 0.0
@@ -254,8 +256,7 @@ class Npc:
         for sign in (1.0, -1.0):
             cand_x = (-uy * sign) * step * 0.7
             cand_y = (ux * sign) * step * 0.7
-            nx = max(5.0, min(game_map.width - 5.0, self.x + cand_x))
-            ny = max(5.0, min(game_map.height - 5.0, self.y + cand_y))
+            nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
             if not self._is_blocked(nx, ny, game_map, player):
                 self._move_to(nx, ny, cand_x, cand_y, dt)
                 return
@@ -302,6 +303,58 @@ class Npc:
         self.moving = False
         self.anim_index = 0
         self.anim_timer = 0.0
+
+    # ------------------- Marge du bord (solution globale) -------------------
+
+    def _sprite_margins(self, game_map):
+        """Retourne les marges (px) à respecter par la position des pieds
+        (x, y) pour que le sprite soit **toujours entièrement visible**
+        (aucun clipping par le bord de la fenêtre).
+
+        Le sprite est ancré en bas-centre (pieds en (x,y)) et centré
+        horizontalement ; sa taille dépend du facteur de perspective
+        (fonction de y) × le scale de base. On calcule avec la position
+        courante (la perspective varie lentement → approximation fine).
+
+        Retourne ``(margin_x, margin_y_top, margin_y_bottom)`` :
+          - ``margin_x``    : marge horizontale (sprite centré sur x).
+          - ``margin_y_top`` : marge en haut (sprite ancré en bas, le sommet
+            est à ``y - sprite_h`` ; on ajoute un buffer pour les offset d'
+            anchor qui décalent le sprite vers le haut).
+          - ``margin_y_bottom`` : marge en bas (petite : les pieds sont au sol).
+
+        Solution globale : s'applique à TOUTS les déplacements (fuite,
+        patrouille) — plus aucun NPC ne sera clipé au bord, quel que soit
+        son comportement, sa carte ou son scale.
+        """
+        perspective_scale = game_map.get_perspective_scale(self.y)
+        final_scale = self.base_scale * perspective_scale
+        try:
+            ref_frame = self.frames["face"][0]
+        except (KeyError, IndexError, TypeError):
+            ref_frame = self.frames.get("face", {}).get(0)
+        if ref_frame is None or not hasattr(ref_frame, "get_width"):
+            # Fallback prudent (sprites non chargés) : marge large.
+            return 40.0, 90.0, 12.0
+        sprite_w = ref_frame.get_width() * final_scale
+        sprite_h = ref_frame.get_height() * final_scale
+        # Buffer pour l'offset d'anchor (les offsets "dos" décalent le
+        # sprite vers le haut/left de ~25px source × scale).
+        margin_x = max(20.0, sprite_w / 2.0 + 10.0)
+        margin_y_top = max(30.0, sprite_h + 25.0)
+        margin_y_bottom = 12.0
+        return float(margin_x), float(margin_y_top), float(margin_y_bottom)
+
+    def _clamp_to_view(self, nx, ny, game_map):
+        """Clampe (nx, ny) pour que le sprite soit entièrement visible.
+
+        Remplace le vieux clamp fixe à 5.0 (trop petit : le sprite ~150px
+        haut était clipé au bord haut → « PNJ disparaît »).
+        """
+        margin_x, margin_y_top, margin_y_bottom = self._sprite_margins(game_map)
+        nx = max(margin_x, min(game_map.width - margin_x, nx))
+        ny = max(margin_y_top, min(game_map.height - margin_y_bottom, ny))
+        return nx, ny
 
     def set_sprite(self, sprite_path):
         """Change la feuille de sprites (transforme l'apparence, ex.

@@ -95,8 +95,16 @@ RPG_Ai/
   (5 tests). |
 | **Transformation monster2 (P4)** | ✅ Le **siège** lève `monster2_active` et transforme le **JOUEUR** en\n  boss (`monster2.png` + vitesse 180) — **pas le monstre** (celui-ci reste\n  normal). Détection dérivée du drapeau : synchronisée à chaque frame dans\n  `update()` et re-appliquée au chargement ; les PNJ du village fuient le\n  joueur-boss. Tests : `test_full_quest.py` (trône → flag → joueur transformé),\n  `test_monster.py` (`test_create_monster_always_normal`). |
 | **Quête complète (P5)** | ✅ RESOLU — la boucle complète Village → Forêt → Boss Combat (5 bougies) → Post Combat (trône) → Village (transformation + fuite des PNJ) → re-entrée Boss Combat (nouveau monstre, bougies à zéro) fonctionne, y compris via la navigation réelle (exits) ; la carte reste celle du post-combat ; le reset complet (monstre recréé, bougies à zéro) est appliqué à chaque entrée dans le Boss Combat. Tests : `test_full_quest.py` (`test_full_quest_flow`, `test_real_navigation_respawn`). |
-| **Aventures (JSON)** | ✅ `adventures/*.json` externalisées + loader + écran de
-  lancement. |
+| **Clamping du bord (marge sprite)** | ✅ Les PNJ ne «
+  disparaissent » plus contre le bord de la carte : la position des pieds
+  est clampée à une marge **calculée** à partir de la taille réelle du
+  sprite (facteur de perspective × `scale`) plutôt qu'à 5 px. Solution
+  **globale** — tous les PNJ (static/patrouille/fuite), toutes les
+  cartes, tous les coins. Tests : `TestNpcEdgeClamp` (bords + 4 coins +
+  patrouille). |
+| **Aventures (JSON)** | ✅ `adventures/*.json` externalisées + loader +
+  écran de lancement. |
+
 | **Type checking** | ✅ `Monster` accepte `str \| Path` pour `sprite_path` ;
   `assert path is not None` (Pyright détecte non-`None`) — plus d'erreurs
   rouges VSCode. |
@@ -121,7 +129,7 @@ RPG_Ai/
 ├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
 ├── adventures/        # aventures JSON (demo-test.json, forest-quest.json)
-├── tests/             # suite pytest (180 tests)
+├── tests/             # suite pytest (187 tests)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 

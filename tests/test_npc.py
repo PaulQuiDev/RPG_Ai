@@ -157,6 +157,111 @@ class TestNpcUpdate(BaseTestCase):
         )
 
 
+class TestNpcEdgeClamp(BaseTestCase):
+    """Marge du bord (solution globale) : le PNJ est clampé pour que
+    son **sprite** (pas ses pieds) soit toujours entièrement visible.
+    Ancien bug : clamp fixe à 5.0 px, le sprite (~100x150 px) était
+    clipé au bord haut/latéral -> le PNJ « disparaissait ».
+    """
+
+    def setUp(self):
+        self.world = build_fake_one_world(self._tmp.name)
+        self.game_map = self.world.game_map
+        self.player = Player(
+            100.0, 100.0, fake_player_data(self._tmp.name, self.fake_sheet_path)
+        )
+
+    def _static_at(self, x, y):
+        npc = Npc(
+            fake_npc_data(self._tmp.name, self.fake_sheet_path, name="E",
+                          pos=[float(x), float(y)]),
+            0,
+        )
+        self.game_map.npcs.append(npc)
+        return npc
+
+    def _sprite_in_view(self, npc, wmap):
+        """True si le sprite (avec offset d'anchor) est entièrement à
+        l'intérieur de la fenêtre (aucun clipping par le bord)."""
+        y = npc.y
+        persp = wmap.get_perspective_scale(y)
+        fscale = npc.base_scale * persp
+        ref = npc.frames["face"][0]
+        sw, sh = ref.get_width() * fscale, ref.get_height() * fscale
+        ax, ay = npc.anchor_offsets.get(npc.direction, (0, 0))
+        tl_x = npc.x - sw / 2.0 + ax * fscale
+        tl_y = npc.y - sh + ay * fscale
+        return (
+            tl_x >= -1.0
+            and tl_x + sw <= wmap.width + 1.0
+            and tl_y >= -1.0
+            and tl_y + sh <= wmap.height + 1.0
+        )
+
+    def test_static_clamped_at_top(self):
+        npc = self._static_at(self.game_map.width / 2.0, 1.0)
+        self.game_map.update_npcs(0.1, self.player)
+        self.assertTrue(self._sprite_in_view(npc, self.game_map))
+        # La marge top est strictement > 5 (le haut du sprite n'est pas clipé).
+        self.assertGreater(npc.y, 5.0)
+
+    def test_static_clamped_at_bottom(self):
+        npc = self._static_at(self.game_map.width / 2.0, self.game_map.height - 0.5)
+        self.game_map.update_npcs(0.1, self.player)
+        self.assertTrue(self._sprite_in_view(npc, self.game_map))
+
+    def test_static_clamped_at_left(self):
+        npc = self._static_at(1.0, self.game_map.height / 2.0)
+        self.game_map.update_npcs(0.1, self.player)
+        self.assertTrue(self._sprite_in_view(npc, self.game_map))
+        self.assertGreater(npc.x, 5.0)
+
+    def test_static_clamped_at_right(self):
+        npc = self._static_at(self.game_map.width - 0.5, self.game_map.height / 2.0)
+        self.game_map.update_npcs(0.1, self.player)
+        self.assertTrue(self._sprite_in_view(npc, self.game_map))
+        self.assertLess(npc.x, self.game_map.width - 5.0)
+
+    def test_corners_all_visible(self):
+        """Les 4 coins : le sprite est entièrement visible
+        (plus de « PNJ qui disparaît » au coin)."""
+        w, h = self.game_map.width, self.game_map.height
+        corners = [(1, 1), (w - 1, 1), (1, h - 1), (w - 1, h - 1)]
+        for (x, y) in corners:
+            npc = self._static_at(x, y)
+            self.game_map.update_npcs(0.1, self.player)
+            self.assertTrue(
+                self._sprite_in_view(npc, self.game_map),
+                f"sprite du PNJ clipé au coin ({round(x)},{round(y)}) : "
+                f"pos=({round(npc.x)},{round(npc.y)})",
+            )
+        # on nettoie pour ne pas polluer les autres tests
+        self.game_map.npcs.clear()
+
+    def test_patrol_keeps_sprite_visible(self):
+        """Un NPC en **patrouille** qui passe près d'un bord reste visible
+        (pas de clipping)."""
+        w, h = self.game_map.width, self.game_map.height
+        npc = Npc(
+            fake_npc_data(
+                self._tmp.name, self.fake_sheet_path, name="P",
+                behavior="patrol",
+                points=[(1.0, h / 2.0), (w - 1.0, h / 2.0)],
+                speed=300.0,
+                pos=[1.0, h / 2.0],
+            ),
+            0,
+        )
+        self.game_map.npcs.append(npc)
+        for _ in range(120):
+            self.game_map.update_npcs(1.0 / 60.0, self.player)
+        self.assertTrue(
+            self._sprite_in_view(npc, self.game_map),
+            f"sprite du NPC en patrouille clipé : pos=({round(npc.x)},{round(npc.y)})",
+        )
+        self.game_map.npcs.clear()
+
+
 class TestNpcCollision(BaseTestCase):
     """can_stand_at tient compte des NPC (rayon + collision_radius)."""
 
