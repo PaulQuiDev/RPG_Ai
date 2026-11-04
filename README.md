@@ -87,6 +87,12 @@ RPG_Ai/
   distinct du rayon de collision réel (12 px) ; recherche des cases de départ /
   cible par cercles concentriques ; A* à « suppression paresseuse » ; recompute
   gated (pas de recompute par timer). |
+| **Monstre — anti-blocage (P2)** | ✅ Le monstre ne reste plus coincé dans
+  un mur, un décor ou une bougie (impasse) : pas de mouvement pendant
+  `STUCK_THRESHOLD` = 1,5 s → recul/poussée vers une case praticable
+  (`_back_up`) ou snap hors de l'obstacle (`_unstick`), puis recompute du
+  chemin A*. Détection sur le **déplacement réel**. Tests : `TestMonsterRecovery`
+  (5 tests). |
 | **Transformation monster2** |  `monster2.png` + vitesse 180 via le drapeau
   `monster2_active` + `set_sprite()`. c'est le jouer qui doit changer daparence pas le monstre bosse , le comportement du reste est bon seulle l'aparence du jeur reste inchanger|
 | **Aventures (JSON)** | ✅ `adventures/*.json` externalisées + loader + écran de
@@ -115,7 +121,7 @@ RPG_Ai/
 ├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
 ├── adventures/        # aventures JSON (demo-test.json, forest-quest.json)
-├── tests/             # suite pytest (162 tests)
+├── tests/             # suite pytest (180 tests)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 
@@ -123,6 +129,7 @@ RPG_Ai/
 | P | Problème | État |
 |---|----------|------|
 | P1 | Flag `--debug` ne marche plus et le mettre dans les testes il doit marcher si maudification sytemme | ✅ RESOLU (bug `interaction=None` corrigé + affichage du chemin A* du monstre en ligne blanche + flèche) |
+| P2 | Le monstre peut toujours se bloquer dans un **mur, un décor ou une bougie** (en marchant dans l'impasse). Le faire reculer ou le pousser pour le débloquer ; il ne doit plus rester coincé. | ✅ RESOLU — détection sur le **déplacement réel** (pas de mouvement pendant `STUCK_THRESHOLD` = 1,5 s) : `_back_up` (recul/poussée vers une case praticable) ou snap hors de l'obstacle (`_unstick`), puis recompute du chemin A*. Tests : `TestMonsterRecovery`. |
 | P4 | Après le boss fight, l'interaction avec le **siège** doit déclencher la
       transformation `monster2` du joueur de pas du monstre. À vérifier : le drapeau `monster2_active` est-
       il bien levé par le siège ? | ⚠️ à vérifier |
@@ -132,9 +139,6 @@ RPG_Ai/
       un warning / erreur. ou position non correcte | ❌ à corriger |
 | P7 | **IA des ennemis** : étendre la patrouille vers une machine à états
       (patrouille → aggro → attaque → fuite). | ❌ à faire |
-
-P2 le mosntrer peut toujour ce bloquer en marchan dans le décort ou bougie, le faire reculer oule pousser pour le débloquer , il reste juste bloquer sinon. 
-
 
 
 ### Dette technique (choix à réviser)
@@ -153,8 +157,9 @@ P2 le mosntrer peut toujour ce bloquer en marchan dans le décort ou bougie, le 
 ### Risques / problèmes futurs (à anticiper)
 - La collision par seuil de couleur casse si l'art change (dette n°1).
 - Performance de l'A* : recompute gated (distance > 50 px, chemin vide, joueur
-  déplacé > 6 cases, ou monstre bloqué > 2 s) — à surveiller si des monstres
-  supplémentaires sont ajoutés.
+  déplacé > 6 cases) ; le « monstre bloqué » est détecté sur le **déplacement
+  réel** (pas de mouvement pendant `STUCK_THRESHOLD` = 1,5 s → débloquage,
+  puis recompute) — à surveiller si des monstres supplémentaires sont ajoutés.
 - Compatibilité du format de sauvegarde (v=1) entre versions du jeu.
 
 ### Idées imatures — à discuter (pas des priorités)
