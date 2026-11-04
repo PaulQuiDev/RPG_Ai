@@ -76,97 +76,105 @@ RPG_Ai/
 └── Nonranger/              # sorties d'assets IA (Krea2, Qwen) + test legacy
 ```
 
-## Prochaines étapes (priorité)
+## 📊 Rapport du projet
 
-### 1. Architecture — dette technique à traiter
-- **Démonolithiser `main.py`** : introduire un objet `Game`/`Scene` avec
-  `update(dt)` / `render(screen)` découplés + une machine à états (pause, menus).
-- ✅ **Coupe de sprite data-driven** (fait — voir « To do » #1) : les défauts
-  `CROP_SIZE` / `CROP_OFFSETS` / `ANCHOR_OFFSETS` restent dans `settings.py` ;
-  les overrides par personnage (joueur ou NPC) sont dans
-  `asset/sprite_configs.json`, ajustables via `python tuner.py`, et rechargées
-  au démarrage par `settings.apply_sprite_overrides`. Ajouter un personnage ne
-  demande plus de retouche manuelle.
-- **États mutés en mémoire** : `change_map_asset` / `cycle_map_variant` modifient
-  `world.maps` à l'exécution sans persistance — formaliser l'état.
-- **Couplage des systèmes** : ajouter un système d'événements / composants pour
-  découpler interactions, transitions et NPC, et faciliter l'ajout (inventaire,
-  quêtes, combat).
+### État actuel
+| Domaine | État |
+|---------|------|
+| **Tests** | ✅ 162 tests (`pytest tests/`) — tous verts. Nouvelles tests
+  `tests/test_monster.py` (A* pathfinding, mouvement, transformation, régression
+  « monstre bloqué »). |
+| **Monstre — pathfinding (A\*)** | ✅ Le monstre contourne les obstacles (bougies,
+  rochers) et n'est plus bloqué en haut de carte. Rayon de pathfinding (8 px)
+  distinct du rayon de collision réel (12 px) ; recherche des cases de départ /
+  cible par cercles concentriques ; A* à « suppression paresseuse » ; recompute
+  gated (pas de recompute par timer). |
+| **Transformation monster2** | ✅ `monster2.png` + vitesse 180 via le drapeau
+  `monster2_active` + `set_sprite()`. |
+| **Sauvegarde / chargement** | ✅ JSON (v=1), écriture atomique, clés S/L, CLI
+  `--save` / `--load`. |
+| **Aventures (JSON)** | ✅ `adventures/*.json` externalisées + loader + écran de
+  lancement. |
+| **Type checking** | ✅ `Monster` accepte `str \| Path` pour `sprite_path` ;
+  `assert path is not None` (Pyright détecte non-`None`) — plus d'erreurs
+  rouges VSCode. |
 
-### 2. Fonctionnalités importantes à ajouter
-- si obj zone bleu defini dans settings mais pas de posion en plus au coorder indiquer retouren un warning ou erreur
-- **IA des ennemis** : les monstres patrouillent seulement ; machine à états.
-- **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des arbres
-  de dialogue.
-- **Tests** : ✅ fait — suite unittest complète (`tests/`, 85 tests :
-  mouvement, collision, transitions, interactions, intégration
-  Village↔Forêt sur les assets réels). Filet en place avant la refactoring §1.
-- **Debug humain** : permetter de conprendre facilement la situation dans la console position jeur x sconde , voire en transparence la map d'interation et les itbox en générale... flag a ajouter au lencement.
+### Structure (complète)
+```
+RPG_Ai/
+├── main.py            # boucle de jeu, input → update → interactions → rendu
+├── game.py            # orchestrateur « Game » : monde, joueur, monstre,
+│                      #   drapeaux, HUD, sauvegarde/chargement
+├── world.py           # registre des cartes, chargement, transitions, spawn
+├── game_map.py        # fond + masque + couche FG, objets bleus, NPC, perspective
+├── monster.py         # monstre hostile : A* pathfinding + transformation
+├── player.py          # personnage : mouvement, animation, collision
+├── npc.py             # personnages de carte : statique / patrouille
+├── behaviors.py       # comportements des objets bleus + registre BEHAVIORS
+├── settings.py        # toute la config (cartes, personnages, sprites, constants)
+├── sprite_loader.py   # découpe 4x3 des sheets
+├── tuner.py           # GUI tkinter : ajuster crops & anchors
+├── smoke_npc.py       # test headless
+├── prompte_actelle.txt# prompts de génération d'assets (IA)
+├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
+├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
+├── adventures/        # aventures JSON (demo-test.json, forest-quest.json)
+├── tests/             # suite pytest (162 tests)
+└── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
+```
 
-### 3. Simplifications possibles
-- Machine à bascule d'actifs (`variants` + `change_map_asset` + `cycle_map_*`) :
-  beaucoup de mécanisme pour un prototype → à conserver ou à retirer.
-- Images IA `Nonranger/*.png` non référencées par le jeu → trier / archiver.
-- Constants redondantes (`CHARACTER_SCALE`, `DISPLAY_SCALE`, `MOVE_SPEED`,
-  `COLLISION_RADIUS`, déjà définies dans `CHARACTERS`) → consolider.
-- Documentation agentic, si plus presise pour permetter au modle de ne pas avoire besoin de tout le code a chager. Si plus efficae par programme python affin d'obtimiser en contexte. 
+### Problèmes restants (bugs) — ordre de priorité
+| P | Problème | État |
+|---|----------|------|
+| P1 | Flag `--debug` ne marche plus | ❌ à corriger |
+| P4 | Après le boss fight, l'interaction avec le **siège** doit déclencher la
+      transformation `monster2`. À vérifier : le drapeau `monster2_active` est-
+      il bien levé par le siège ? | ⚠️ à vérifier |
+| P5 | Revenir sur la scène après le combat ne permet **pas de refaire le
+      combat** (monstre non respawné). | ❌ à corriger |
+| P6 | Objet « zone bleu » défini dans `settings` sans position doit retourner
+      un warning / erreur. | ❌ à corriger |
+| P7 | **IA des ennemis** : étendre la patrouille vers une machine à états
+      (patrouille → aggro → attaque → fuite). | ❌ à faire |
 
-### Progression des tâches à envisager (✅ = fait · ⬜ = à faire)
+> ✅ **P2** (monstre bloqué / mauvais chemin) et ✅ **P3** (erreurs rouges
+> VSCode / tests) sont **résolus** (voir « État actuel »).
 
-**Progression : 9 / 10** — ✅✅✅✅✅✅✅✅✅⬜
-
-- ✅ Interface simple pour ajuster les settings de coupe de chaque personnage
-  (joueur ou NPC) — la taille/position de la feuille varie suite à la génération
-  d'image IA. `tuner.py` (tkinter) : glisser une boîte de coupe par cadre +
-  point d'ancrage (pieds du personnage), aperçu live, écriture dans
-  `asset/sprite_configs.json`. Usage : `python tuner.py` ou `python tuner.py Femme`.
-- ✅ Debug humain : afficher la position du joueur + les zones d'interaction
-  (carte de collision en transparence, itboxes) via un flag de lancement
-  (`--debug`).
-- ✅ Option pour contrôler la taille de l'écran (plein écran / résolution
-  custom, ex. `--fullscreen` / `--window WxH`). Résolution logique du jeu
-  fixe (960x720) ; la fenêtre est redimensionnée via une surface hors-écran
-  + smoothscale + letterbox (aspect conservé, bandes noires si besoin).
-- ✅ Maintenir la Doc : ne charger que ce qui aide le contexte LLM (éviter les
-  détails inutiles à charger). Section « Contexte minimal (agent LLM) » : ordre
-  de lecture des fichiers, commandes, et liste de ce qu'il ne faut **PAS** charger
-  (PNGs, `.venv/`).
-- ✅ Interaction des objets bleus — plus d'« agir (I) sur : None » :
-  `get_focused_object` ne cible que les objets bleus qui ont un comportement
-  (`action` ou `interaction`) ; label lisible (`name`/`action`/
-  `interaction.label`) + validation au chargement (objets sans comportement et
-  interactions orphelines signalées). (`game_map.py`, `world.py`, `game.py`)
-- ✅ Combat chef — HUD des bougies exact (5, pas 10) et reset d'état : un
-  nouveau monstre + bougies à zéro à chaque re-entrée dans la carte de combat
-  (le joueur ne reste pas « en boss fight » après le retour). (`game.py`)
-- ✅ Tuner — correction Pylance (`_drag_box_item` sans `getattr`, attribut déclaré
-  dans `__init__`), touches flèches pour décaler la boîte (Shift = pas gros),
-  et cadre autorisé hors du carré de base (clamping à la feuille, pas au cell).
-  (`tuner.py`)
-- ✅ Tests de la boucle complète — Village → Forêt → Boss Combat (5 bougies) →
-  Post Combat (trône) → Village (transformation + fuite des PNJ) → re-entrée
-  Boss Combat (nouveau monstre, bougies à zéro), sur les cartes réelles ; +
-  5 tests `TestClampToSheet`. (`tests/test_full_quest.py`,
-  `tests/test_sprite_tuner.py`)
-- ✅ Sauvegarde / chargement exportable & importable : historique d'actions +
-  état du jeu, format JSON. `Game.save(path)` / `Game.load(path)` (chemin par
-  défaut `saves/game.json`, configurable) : sauvegardent / restaurent fidèlement
-  la carte, le joueur, les drapeaux, les bougies, le monstre, la transformation
-  et l'historique (max 200 actions, version 1) ; robuste face à un fichier
-  absent, corrompu ou inconnu. Clés S / L en jeu + options CLI `--save` /
-  `--load` (reprise de partie au démarrage). (`game.py`, `main.py`)
-- ⬜ Machine à états des monstres : les ennemis patrouillent seulement ; ajouter
-  poursuite / attaque (voir §1 « IA des ennemis »).
-
-  ### Ne pas implémenter : a discuter pas certain voire comment faire, idée imature:
+### Dette technique (choix à réviser)
 - **Collision par seuil de couleur fragile** : le masque praticable se base sur
   un seuil de couleur (R < 150). Remplacer par une map de collision **données**
   (tiles) + outil de calibration, pour ne pas casser la collision si l'art change.
-- **Pas de gestion d'assets** : centraliser chargement/validation/cache dans un
-  manager d'assets.
-- **Pipeline IA pour les assets** : lier la génération Krea2/Qwen au projet
+- **Pas de gestion centralisée des assets** : centraliser chargement /
+  validation / cache dans un manager d'assets.
+- **Pipeline IA pour les assets** : lier la génération Krea2 / Qwen au projet
   (validation des sheets, découpe automatique, insertion dans `settings.py`).
-- **IA des ennemis** :  ajouter santé.
- - **Inventaire / quêtes** : les interactions actuelles ne font que téléporter ou
-  basculer d'actif.
-- Basculer sur du web pour l'hoste sur internet et pk pas le git hub pages
+- **Santé du monstre** : ajouter un système de santé (les interactions actuelles
+  ne font que téléporter ou basculer d'actif).
+- **Inventaire / quêtes** : les interactions actuelles ne font que téléporter
+  ou basculer d'actif.
+
+### Risques / problèmes futurs (à anticiper)
+- La collision par seuil de couleur casse si l'art change (dette n°1).
+- Performance de l'A* : recompute gated (distance > 50 px, chemin vide, joueur
+  déplacé > 6 cases, ou monstre bloqué > 2 s) — à surveiller si des monstres
+  supplémentaires sont ajoutés.
+- Compatibilité du format de sauvegarde (v=1) entre versions du jeu.
+
+### Idées imatures — à discuter (pas des priorités)
+- **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des
+  arbres de dialogue.
+- **Éditeur de niveau** : changer les couleurs de la segmentation + définir les
+  objets à interagir (nom / comportement pour le JSON), voire afficher la map et
+  la segmentation en transparence.
+- **Debug humain** : comprendre facilement la situation dans la console
+  (position joueur + seconde), voire afficher en transparence la map
+  d'interaction et les hitboxes. Flag à ajouter au lancement.
+- **Hébergement web** : migrer du GitHub Pages vers un hébergement web.
+
+### Prochaines étapes (ordre de priorité)
+1. **P1** — corriger le flag `--debug` (vérifier `main.py` + `game.py`).
+2. **P4** — vérifier que le **siège** lève bien `monster2_active` (ajouter un
+   test du drapeau dans `tests/`).
+3. **P5** — respawn du monstre à la re-sélection de la scène post-combat.
+4. **P6** — validation des objets bleus (warning / erreur si position manquante).
+5. **P7** — IA des ennemis (machine à états).

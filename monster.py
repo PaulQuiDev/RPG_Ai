@@ -25,11 +25,23 @@ MONSTER_SPRITE_FINAL = BASE_DIR / "asset/carater/monster2.png"
 
 CELL_SIZE = 16.0
 
+# Rayon de collision utilisé UNIQUEMENT pour le calcul de chemin (A*).
+# Plus petit que le rayon réel (12 px) afin que la grille de 16 px
+# n'impose pas un chemin artificiellement long (détours / blocages).
+PATHFINDING_RADIUS = 8.0
+
 
 class Monster:
     """Monstre qui fonce lentement sur le joueur."""
 
-    def __init__(self, x, y, speed=55.0, scale=0.35, sprite_path=MONSTER_SPRITE):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        speed: float = 55.0,
+        scale: float = 0.35,
+        sprite_path: str | Path = MONSTER_SPRITE,
+    ):
         self.x = float(x)
         self.y = float(y)
         self.speed = float(speed)
@@ -50,7 +62,7 @@ class Monster:
         self._path_anchor = None  # position du joueur au moment du calcul
         self._path_time = 0.0
 
-    def _load_sheet(self, sprite_path):
+    def _load_sheet(self, sprite_path: str | Path):
         """Charge la feuille et découpe toutes les frames."""
         self.crop_size, self.crop_offsets, self.anchor_offsets = (
             resolve_crop_config({})
@@ -67,7 +79,7 @@ class Monster:
         )
         self.anim_index = 0
 
-    def set_sprite(self, sprite_path):
+    def set_sprite(self, sprite_path: str | Path):
         """Change la feuille de sprites (transforme l'apparence, ex.
         monster -> monster2)."""
         self.sprite_path = sprite_path
@@ -80,39 +92,89 @@ class Monster:
     # -- Chemin A* ---------------------------------------------------------
 
     def _cell_walkable(self, cx, cy, game_map):
-        """La cellule (cx, cy) est-elle praticable pour le monstre ?"""
+        """La cellule (cx, cy) est-elle praticable pour le monstre ?
+
+        Utilise PATHFINDING_RADIUS (et non le rayon réel) : le calcul de
+        chemin doit rester permissif pour ne pas forcer de détours, tandis
+        que le déplacement réel garde le vrai rayon de collision."""
         wx = cx * CELL_SIZE + CELL_SIZE / 2.0
         wy = cy * CELL_SIZE + CELL_SIZE / 2.0
-        return game_map.can_stand_at(wx, wy, self.collision_radius)
+        return game_map.can_stand_at(wx, wy, PATHFINDING_RADIUS)
 
     def _compute_path(self, tx, ty, game_map):
         """A* : liste de waypoints pixel (position actuelle vers (tx, ty))
         ou None s'il n'y a aucun chemin."""
+
         def heuristic(a, b):
-            return math.hypot(a[0] - b[0], a[1] - b[1])
+            return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
         start = (int(self.x // CELL_SIZE), int(self.y // CELL_SIZE))
         # Si la cellule du centre n'est pas praticable (corps dans un
-        # obstacle), chercher une cellule praticable proche.
-        for dx in range(-3, 4):
-            for dy in range(-3, 4):
+        # obstacle), chercher une cellule praticable proche, par cercles
+        # concentriques (de plus en plus loin) : le premier trouvé est le
+        # plus proche.
+        found = False
+        for dist in range(0, 12):
+            if dist == 0:
+                offsets = [(0, 0)]
+            else:
+                offsets = [
+                    (dx, dy)
+                    for dx in range(-dist, dist + 1)
+                    for dy in range(-dist, dist + 1)
+                    if max(abs(dx), abs(dy)) == dist
+                ]
+            for dx, dy in offsets:
                 candidate = (start[0] + dx, start[1] + dy)
                 if self._cell_walkable(candidate[0], candidate[1], game_map):
                     start = candidate
+                    found = True
                     break
-            else:
-                continue
-            break
+            if found:
+                break
+        if not found and not self._cell_walkable(start[0], start[1], game_map):
+            return None
         target = (int(tx // CELL_SIZE), int(ty // CELL_SIZE))
+        if start == target:
+            return []
+        # Si la cellule cible n'est pas praticable (le joueur peut y être,
+        # mais pas le monstre), chercher la cellule praticable la plus
+        # proche, par cercles concentriques.
+        target_found = False
+        for dist in range(0, 6):
+            if dist == 0:
+                offsets = [(0, 0)]
+            else:
+                offsets = [
+                    (dx, dy)
+                    for dx in range(-dist, dist + 1)
+                    for dy in range(-dist, dist + 1)
+                    if max(abs(dx), abs(dy)) == dist
+                ]
+            for dx, dy in offsets:
+                candidate = (target[0] + dx, target[1] + dy)
+                if self._cell_walkable(candidate[0], candidate[1], game_map):
+                    target = candidate
+                    target_found = True
+                    break
+            if target_found:
+                break
+        if not target_found:
+            return None
 
-        open_set = [(heuristic(start, target), 0, start)]
+        # A* à "suppression paresseuse" (lazy deletion) : on ne met jamais à
+        # jour une entrée de la pile, on n'en ajoute de nouvelles ; au pop,
+        # on ignore les entrées obsolètes (un meilleur chemin vers le nœud a
+        # été trouvé depuis). La clé de priorité est f = g + h.
+        open_set = [(heuristic(start, target), 0.0, 0, start)]  # (f, g, n, node)
         g_score = {start: 0.0}
-        f_score = {start: heuristic(start, target)}
         came_from = {}
-        in_open = {start}
-
+        counter = 0
         while open_set:
-            _, _, current = heapq.heappop(open_set)
+            f, g, _, current = heapq.heappop(open_set)
+            # Entrée obsolète (un meilleur chemin vers current trouvé depuis) ?
+            if g > g_score.get(current, float("inf")) + 1e-9:
+                continue
             if current == target:
                 path = [current]
                 while current in came_from:
@@ -130,15 +192,19 @@ class Monster:
                 neighbor = (current[0] + dcx, current[1] + dcy)
                 if not self._cell_walkable(neighbor[0], neighbor[1], game_map):
                     continue
-                if neighbor in in_open:
-                    continue
-                tentative_g = g_score[current] + 1.0
+                tentative_g = g + 1.0
                 if tentative_g < g_score.get(neighbor, float("inf")):
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g
-                    f_score[neighbor] = tentative_g + heuristic(neighbor, target)
-                    open_set.append((f_score[neighbor], 0, neighbor))
-                    in_open.add(neighbor)
+                    counter += 1
+                    open_set.append(
+                        (
+                            tentative_g + heuristic(neighbor, target),
+                            tentative_g,
+                            counter,
+                            neighbor,
+                        )
+                    )
         return None
 
     def _step_towards(self, tx, ty, dt, game_map):
@@ -235,10 +301,12 @@ class Monster:
 
         self._advance_animation(dt)
 
-        # Retire le waypoint atteint.
+        # Retire le waypoint atteint. Tolérance plus grande que le centre
+        # exact de la cellule : le vrai rayon de collision (12 px) peut
+        # empêcher d'atteindre le centre, sans que le monstre soit bloqué.
         if self._path and moved:
             wx, wy = self._path[0]
-            if math.hypot(self.x - wx, self.y - wy) < CELL_SIZE * 0.5:
+            if math.hypot(self.x - wx, self.y - wy) < CELL_SIZE:
                 self._path.pop(0)
 
         return self.touches(player)
