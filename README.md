@@ -81,18 +81,13 @@ RPG_Ai/
 ### État actuel
 | Domaine | État |
 |---------|------|
-| **Tests** | ✅ 162 tests (`pytest tests/`) — tous verts. Nouvelles tests
-  `tests/test_monster.py` (A* pathfinding, mouvement, transformation, régression
-  « monstre bloqué »). |
 | **Monstre — pathfinding (A\*)** | ✅ Le monstre contourne les obstacles (bougies,
   rochers) et n'est plus bloqué en haut de carte. Rayon de pathfinding (8 px)
   distinct du rayon de collision réel (12 px) ; recherche des cases de départ /
   cible par cercles concentriques ; A* à « suppression paresseuse » ; recompute
   gated (pas de recompute par timer). |
-| **Transformation monster2** | ✅ `monster2.png` + vitesse 180 via le drapeau
-  `monster2_active` + `set_sprite()`. |
-| **Sauvegarde / chargement** | ✅ JSON (v=1), écriture atomique, clés S/L, CLI
-  `--save` / `--load`. |
+| **Transformation monster2** |  `monster2.png` + vitesse 180 via le drapeau
+  `monster2_active` + `set_sprite()`. c'est le jouer qui doit changer daparence pas le monstre bosse , le comportement du reste est bon seulle l'aparence du jeur reste inchanger|
 | **Aventures (JSON)** | ✅ `adventures/*.json` externalisées + loader + écran de
   lancement. |
 | **Type checking** | ✅ `Monster` accepte `str \| Path` pour `sprite_path` ;
@@ -126,19 +121,20 @@ RPG_Ai/
 ### Problèmes restants (bugs) — ordre de priorité
 | P | Problème | État |
 |---|----------|------|
-| P1 | Flag `--debug` ne marche plus | ❌ à corriger |
+| P1 | Flag `--debug` ne marche plus et le mettre dans les testes il doit marcher si maudification sytemme | ❌ à corriger |
 | P4 | Après le boss fight, l'interaction avec le **siège** doit déclencher la
-      transformation `monster2`. À vérifier : le drapeau `monster2_active` est-
+      transformation `monster2` du jouer de pas du monstre. À vérifier : le drapeau `monster2_active` est-
       il bien levé par le siège ? | ⚠️ à vérifier |
 | P5 | Revenir sur la scène après le combat ne permet **pas de refaire le
-      combat** (monstre non respawné). | ❌ à corriger |
+      combat** (monstre non respawné). passage a la map Post Combat si on rerentre par la foret | ❌ à corriger |
 | P6 | Objet « zone bleu » défini dans `settings` sans position doit retourner
-      un warning / erreur. | ❌ à corriger |
+      un warning / erreur. ou position non correcte | ❌ à corriger |
 | P7 | **IA des ennemis** : étendre la patrouille vers une machine à états
       (patrouille → aggro → attaque → fuite). | ❌ à faire |
 
-> ✅ **P2** (monstre bloqué / mauvais chemin) et ✅ **P3** (erreurs rouges
-> VSCode / tests) sont **résolus** (voir « État actuel »).
+P2 le mosntrer peut toujour ce bloquer en marchan dans le décort ou bougie, le faire reculer oule pousser pour le débloquer , il reste juste bloquer sinon. 
+
+
 
 ### Dette technique (choix à réviser)
 - **Collision par seuil de couleur fragile** : le masque praticable se base sur
