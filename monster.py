@@ -30,6 +30,11 @@ CELL_SIZE = 16.0
 # n'impose pas un chemin artificiellement long (détours / blocages).
 PATHFINDING_RADIUS = 8.0
 
+# --- Débloquage (P2) : le monstre ne doit pas rester coincé --------
+# s'il se coille dans un mur, une bougie ou une impasse.
+STUCK_THRESHOLD = 1.5      # s sans mouvement -> considéré bloqué
+BACKUP_DISTANCE = 30.0     # px : distance de recul/poussée au débloquage
+RECOVERY_COOLDOWN = 0.8    # s : délai entre deux tentatives de débloquage
 
 class Monster:
     """Monstre qui fonce lentement sur le joueur."""
@@ -60,7 +65,13 @@ class Monster:
         # Chemin A* : liste de waypoints (x, y) ; None avant calcul.
         self._path = None
         self._path_anchor = None  # position du joueur au moment du calcul
-        self._path_time = 0.0
+
+        # Débloquage (P2) : le monstre ne doit pas rester coincé dans un
+        # mur / une bougie. `_stuck_since` compte les secondes sans
+        # mouvement réel ; `_recovery_cooldown` espace les tentatives.
+        self._last_heading = (0.0, 0.0)  # dernier sens de déplacement (unité)
+        self._stuck_since = 0.0          # secondes sans mouvement réel
+        self._recovery_cooldown = 0.0    # refroidissement du débloquage
 
     def _load_sheet(self, sprite_path: str | Path):
         """Charge la feuille et découpe toutes les frames."""
@@ -227,48 +238,123 @@ class Monster:
             moved = True
         return moved
 
-    def _refresh_path(self, player_x, player_y, dt, game_map):
-        """Recalcule le chemin A* si nécessaire.
-        Recomputation : pas de chemin, joueur éloigné de l'anchor, ou
-        monstre bloqué (pas de progrès sur 2s). Pas de recompute par
-        timer (pour éviter l'oscillation)."""
-        self._path_time += dt
+    # -- Débloquage (P2) -----------------------------------------------------
+
+    def _is_stuck(self, target_x, target_y, game_map):
+        """True si le monstre ne progresse plus (pas de mouvement pendant
+        `STUCK_THRESHOLD`) alors qu'il n'est pas au contact du joueur, et
+        si le débloquage est autorisé (refroidissement écoulé)."""
+        dist = math.hypot(target_x - self.x, target_y - self.y)
+        # Au contact (ou presque) du joueur : objectif atteint, on n'est pas
+        # bloqué (l'interaction va se déclencher).
+        if dist < self.hit_radius:
+            self._stuck_since = 0.0
+            return False
+        if self._recovery_cooldown > 0.0:
+            return False
+        return self._stuck_since >= STUCK_THRESHOLD
+
+    def _unstick(self, target_x, target_y, game_map):
+        """Débloque le monstre : s'il est DANS un obstacle, on le pousse
+        vers le point praticable le plus proche ; sinon, on le recule dans
+        une direction praticable. Puis on re-calcule le chemin depuis la
+        nouvelle position."""
+        old = (self.x, self.y)
+
+        if not game_map.can_stand_at(self.x, self.y, self.collision_radius):
+            # Le monstre est dans un obstacle : on se snap sur le point
+            # praticable le plus proche.
+            try:
+                nx, ny = game_map.find_nearest_walkable(
+                    self.x, self.y, self.collision_radius
+                )
+                self.x, self.y = float(nx), float(ny)
+            except RuntimeError:
+                pass
+        else:
+            # Sur un point praticable mais bloqué : on recule.
+            self._back_up(game_map)
+
+        # Re-calcule le chemin depuis la nouvelle position (sauf si trop
+        # proche du joueur : alors on le poursuit directement).
+        dist = math.hypot(target_x - self.x, target_y - self.y)
+        if dist >= 50.0:
+            self._path = self._compute_path(target_x, target_y, game_map)
+            if self._path is None:
+                self._path = []
+            self._path_anchor = (target_x, target_y)
+        else:
+            self._path = []
+        if (self.x, self.y) != old:
+            self._last_heading = (0.0, 0.0)
+        self._stuck_since = 0.0
+        self._recovery_cooldown = RECOVERY_COOLDOWN
+
+    def _back_up(self, game_map):
+        """Déplace le monstre dans une direction praticable : recul en
+        priorité (inverse du dernier sens de déplacement), compas en
+        secours. True s'il y a eu un mouvement."""
+        directions = []
+        # 1) Recul : inverse du dernier sens de déplacement.
+        hx, hy = self._last_heading
+        if hx or hy:
+            directions.append((-hx, -hy))
+        # 2) Compas : les 8 directions.
+        for k in range(8):
+            a = k * math.pi / 4.0
+            directions.append((math.cos(a), math.sin(a)))
+
+        for hx, hy in directions:
+            for dist in (BACKUP_DISTANCE, BACKUP_DISTANCE * 0.6,
+                         BACKUP_DISTANCE * 0.3, 6.0, 3.0):
+                nx = self.x + hx * dist
+                ny = self.y + hy * dist
+                if game_map.can_stand_at(nx, ny, self.collision_radius):
+                    self.x, self.y = float(nx), float(ny)
+                    return True
+        return False
+
+    def _refresh_path(self, player_x, player_y, game_map):
+        """Recalcule le chemin A* si nécessaire : pas de chemin, ou joueur
+        éloigné de l'anchor. La détection de « bloqué » est séparée et
+        se fait sur le déplacement réel (voir `_is_stuck` / `_unstick`)."""
         dist = math.hypot(player_x - self.x, player_y - self.y)
+        # Trop proche du joueur : on le poursuit directement, pas besoin
+        # d'un chemin A*.
         if dist < 50.0:
             self._path = []
             return
-        # Path empty (reached end) -> recompute
         if self._path is None or (isinstance(self._path, list) and not self._path):
-            # But if we just reached the end and player is close, don't recompute
-            if self._path_time < 0.3:
-                return
             recompute = True
         else:
             recompute = False
-            # Player moved far from anchor
             if self._path_anchor is not None:
                 if (
                     abs(player_x - self._path_anchor[0]) > CELL_SIZE * 6
                     or abs(player_y - self._path_anchor[1]) > CELL_SIZE * 6
                 ):
                     recompute = True
-            # Monster stuck (no progress for 2s)
-            if self._path_time >= 2.0:
-                recompute = True
         if recompute:
             self._path = self._compute_path(player_x, player_y, game_map)
             if self._path is None:
                 self._path = []
             self._path_anchor = (player_x, player_y)
-            self._path_time = 0.0
 
     # -- Mouvement -----------------------------------------------------------
 
     def move_towards(self, target_x, target_y, dt, game_map, player):
         """Avance vers le joueur (ou vers le waypoint suivant du chemin
         A*). Retourne True si, après le déplacement, le monstre touche le
-        joueur (à gérer par l'appelant : remise en jeu)."""
-        self._refresh_path(target_x, target_y, dt, game_map)
+        joueur (à gérer par l'appelant : remise en jeu).
+
+        Le monstre ne doit pas rester coincé dans un mur / une bougie :
+        s'il ne progresse plus, on le recule ou on le pousse pour le
+        débloquer (voir `_is_stuck` / `_unstick`)."""
+        # Si bloqué, on se débloque ; sinon on (re)calcule le chemin.
+        if self._is_stuck(target_x, target_y, game_map):
+            self._unstick(target_x, target_y, game_map)
+        else:
+            self._refresh_path(target_x, target_y, game_map)
 
         # Cible : le waypoint suivant du chemin, sinon le joueur.
         if self._path:
@@ -279,6 +365,7 @@ class Monster:
         dist = math.hypot(dx, dy)
         if dist < 2.0:
             self._stop()
+            self._stuck_since = 0.0
             return self.touches(player)
 
         # Orientation = direction du déplacement (comme le joueur).
@@ -288,22 +375,19 @@ class Monster:
             self.direction = "face" if dy > 0 else "dos"
 
         # Déplacement axe par axe (glisse le long des murs).
-        step = self.speed * dt
-        step_x = (dx / dist) * step
-        step_y = (dy / dist) * step
-        moved = False
-        if game_map.can_stand_at(self.x + step_x, self.y, self.collision_radius):
-            self.x += step_x
-            moved = True
-        if game_map.can_stand_at(self.x, self.y + step_y, self.collision_radius):
-            self.y += step_y
-            moved = True
+        moved = self._step_towards(tx, ty, dt, game_map)
 
-        self._advance_animation(dt)
+        if moved:
+            self._last_heading = (dx / dist, dy / dist)
+            self._stuck_since = 0.0
+            self._advance_animation(dt)
+        else:
+            # Bloqué : on compte les secondes sans mouvement pour déclencher
+            # le débloquage (voir `_is_stuck`).
+            self._stuck_since += dt
+            self._stop()
 
-        # Retire le waypoint atteint. Tolérance plus grande que le centre
-        # exact de la cellule : le vrai rayon de collision (12 px) peut
-        # empêcher d'atteindre le centre, sans que le monstre soit bloqué.
+        # Retire le waypoint atteint (uniquement si on a avancé).
         if self._path and moved:
             wx, wy = self._path[0]
             if math.hypot(self.x - wx, self.y - wy) < CELL_SIZE:

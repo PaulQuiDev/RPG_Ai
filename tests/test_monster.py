@@ -32,7 +32,10 @@ import pygame
 from settings import MAPS
 from world import World
 from player import Player
-from monster import Monster, CELL_SIZE, PATHFINDING_RADIUS, MONSTER_SPRITE, MONSTER_SPRITE_FINAL
+from monster import (
+    Monster, CELL_SIZE, PATHFINDING_RADIUS, MONSTER_SPRITE, MONSTER_SPRITE_FINAL,
+    STUCK_THRESHOLD, BACKUP_DISTANCE, RECOVERY_COOLDOWN,
+)
 
 from .base import BaseTestCase, new_world
 from .factories import build_fake_one_world, fake_player_data
@@ -64,7 +67,10 @@ class TestMonsterConstruction(BaseTestCase):
         self.assertEqual(m.collision_radius, 12.0)
         self.assertEqual(m.hit_radius, 45.0)
         self.assertIsNone(m._path)
-        self.assertEqual(m._path_time, 0.0)
+        self.assertIsNone(m._path_anchor)
+        self.assertEqual(m._last_heading, (0.0, 0.0))
+        self.assertEqual(m._stuck_since, 0.0)
+        self.assertEqual(m._recovery_cooldown, 0.0)
         # Le sprite s'est bien chargé (4x3 frames).
         self.assertEqual(len(self._make(10, 10).sprites["face"]), 3)
 
@@ -324,6 +330,124 @@ class TestMonsterTransformation(BaseTestCase):
         self.assertTrue(str(m.sprite_path).endswith("monster2.png"))
         # Le sprite est bien rechargé (4x3 frames intactes).
         self.assertEqual(len(m.sprites["face"]), 3)
+
+
+class TestMonsterRecovery(BaseTestCase):
+    """P2 : le monstre ne doit pas rester coincé dans un obstacle.
+
+    Le débloquage (recul / pousser) se déclenche quand le monstre ne
+    progresse plus pendant `STUCK_THRESHOLD`. On teste les pièces
+    (`_is_stuck` / `_back_up` / `_unstick`) et le chemin complet
+    (`move_towards`).
+    """
+
+    def setUp(self):
+        # Mur vertical : x ∈ [400, 440], y ∈ [100, 600].
+        self.world = build_fake_one_world(
+            self._tmp.name, blocked=[(400, 100, 40, 500)]
+        )
+        self.gmap = self.world.game_map  # GameMap (can_stand_at), PAS la World
+        self.m = Monster(100.0, 300.0, 55.0, sprite_path=self.fake_sheet_path)
+
+    @staticmethod
+    def _fake_player(x, y):
+        class _FakePlayer:
+            def __init__(self):
+                self.x = float(x)
+                self.y = float(y)
+
+        return _FakePlayer()
+
+    def test_is_stuck(self):
+        """_is_stuck : bloqué seulement si pas au contact ET refroidissement
+        écoulé."""
+        self.m.x, self.m.y = 100.0, 300.0
+        # Loin du joueur (320 px > hit_radius).
+        self.m._stuck_since = 0.0
+        self.m._recovery_cooldown = 0.0
+        self.assertFalse(self.m._is_stuck(500.0, 300.0, self.gmap))  # pas encore
+        self.m._stuck_since = STUCK_THRESHOLD
+        self.assertTrue(self.m._is_stuck(500.0, 300.0, self.gmap))   # bloqué
+        # Le refroidissement bloque la réactivation.
+        self.m._recovery_cooldown = RECOVERY_COOLDOWN
+        self.assertFalse(self.m._is_stuck(500.0, 300.0, self.gmap))
+        # Au contact du joueur : on n'est pas bloqué (objectif atteint),
+        # et le timer est remis à 0.
+        self.m._recovery_cooldown = 0.0
+        self.m._stuck_since = STUCK_THRESHOLD
+        self.assertFalse(self.m._is_stuck(140.0, 300.0, self.gmap))  # 40 px
+        self.assertEqual(self.m._stuck_since, 0.0)
+
+    def test_back_up(self):
+        """_back_up : recul (inverse du heading) vers une case praticable."""
+        self.m.x, self.m.y = 360.0, 300.0  # à côté du mur, pratique
+        self.assertTrue(
+            self.gmap.can_stand_at(self.m.x, self.m.y, self.m.collision_radius)
+        )
+        self.m._last_heading = (1.0, 0.0)  # avançait vers l'Est (vers le mur)
+        old = (self.m.x, self.m.y)
+        self.assertTrue(self.m._back_up(self.gmap))  # le recul doit réussir
+        self.assertNotEqual((self.m.x, self.m.y), old)
+        self.assertTrue(
+            self.gmap.can_stand_at(self.m.x, self.m.y, self.m.collision_radius)
+        )
+        # Le recul suit le sens inverse (Est -> Ouest) : x diminue.
+        self.assertLess(self.m.x, old[0])
+
+    def test_unstick_snap_out_of_wall(self):
+        """Monstre DANS un mur -> _unstick le snap vers une case pratique
+        et re-calcule le chemin."""
+        self.m.x, self.m.y = 420.0, 300.0  # dans le mur
+        self.assertFalse(
+            self.gmap.can_stand_at(420.0, 300.0, self.m.collision_radius)
+        )
+        old = (self.m.x, self.m.y)
+        self.m._unstick(100.0, 300.0, self.gmap)
+        self.assertTrue(
+            self.gmap.can_stand_at(self.m.x, self.m.y, self.m.collision_radius),
+            "après _unstick, le monstre doit être sur une case pratique",
+        )
+        self.assertNotEqual((self.m.x, self.m.y), old)
+
+    def test_move_towards_unsticks(self):
+        """move_towards : le monstre coincé (pas de mouvement) est débloqué
+        au premier appel et progresse vers le joueur."""
+        self.m.x, self.m.y = 420.0, 300.0  # dans le mur
+        player = self._fake_player(100.0, 300.0)  # loin
+        # Simule "pas de mouvement pendant > STUCK_THRESHOLD".
+        self.m._stuck_since = STUCK_THRESHOLD + 1.0
+        self.m._recovery_cooldown = 0.0
+        self.m._last_heading = (1.0, 0.0)
+        self.m._path = []
+        before = (self.m.x, self.m.y)
+        self.assertFalse(self.gmap.can_stand_at(*before, self.m.collision_radius))
+        self.m.move_towards(100.0, 300.0, 1.0 / 60.0, self.gmap, player)
+        after = (self.m.x, self.m.y)
+        # Le monstre est sorti du mur (case pratique).
+        self.assertTrue(self.gmap.can_stand_at(*after, self.m.collision_radius))
+        self.assertNotEqual(after, before)
+        # Et il a commencé à s'approcher du joueur (le débloquage a
+        # déverrouillé le chemin).
+        old_d = math.hypot(before[0] - 100.0, before[1] - 300.0)
+        new_d = math.hypot(after[0] - 100.0, after[1] - 300.0)
+        self.assertLessEqual(new_d, old_d + 10.0)
+
+    def test_stuck_timer_resets_on_movement(self):
+        """_stuck_since ne s'initialise que quand le monstre bouge."""
+        self.m.x, self.m.y = 100.0, 300.0  # terrain libre (à gauche du mur)
+        self.m._stuck_since = 1.0
+        self.assertTrue(
+            self.gmap.can_stand_at(self.m.x, self.m.y, self.m.collision_radius)
+        )
+        self.m._path = []
+        self.m.move_towards(200.0, 300.0, 1.0 / 30.0, self.gmap,
+                            self._fake_player(200.0, 300.0))
+        # Le monstre a avancé -> le timer a été remis à 0.
+        self.assertEqual(self.m._stuck_since, 0.0)
+        self.assertNotEqual(
+            (self.m.x, self.m.y), (100.0, 300.0),
+            "le monstre doit avancer vers le joueur",
+        )
 
 
 if __name__ == "__main__":
