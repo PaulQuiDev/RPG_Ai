@@ -89,8 +89,18 @@ class GameMap:
 
         # Objets interactifs (pixels bleus du masque) : extraits et
         # pré-rendus au chargement pour ne rien calculer par frame.
+        # 1) Sanitise les interactions (position manquante / mal formée /
+        #    hors carte) AVANT l'extraction : sans ça, ``_extract_interactables``
+        #    lève KeyError/TypeError sur ``inter["pos"]``.
+        self._sanitize_interactions()
         self.interact_layer, self.interact_objects = self._extract_interactables()
         self._validate_interactions()
+
+        # Avertissements de configuration : loggés à la création de la carte
+        # (et accessibles via ``self.interaction_warnings``) pour que les
+        # erreurs de positions dans settings.py soient visibles tout de suite.
+        for warn in self.interaction_warnings:
+            print(f"[AVERTISSEMENT] {warn}")
 
         # Éléments de premier plan (composantes de la FG) : extraits et
         # pré-rendus (surface tight, alpha conservé).
@@ -128,6 +138,91 @@ class GameMap:
                 count += 1
         return count
 
+    def _sanitize_interactions(self):
+        """Solution globale (P6) : valide la position de chaque interaction
+        (clé « interactions » de settings.py) AVANT le traitement.
+
+        Une interaction est conservée seulement si son ``pos`` :
+        - existe (clé ``pos`` présente),
+        - est un tableau de 2 éléments,
+        - est non-numérique (deux nombres).
+
+        Les invalides sont **retirées** de ``self.interactions`` et un
+        avertissement est produit. Les positions hors des bornes de la carte
+        sont **conservées** (format valide) mais signalées par un avertissement
+        ; elles ne peuvent pas être associées à un objet bleu (celui-ci est
+        toujours dans la carte) et recevront l'avertissement « orphelin »
+        dans ``_validate_interactions``.
+
+        Retourne la liste des avertissements (écrits aussi dans
+        ``self.interaction_warnings``).
+        """
+        warnings = []
+        cleaned = []
+
+        def _is_in_bounds(px, py):
+            return 0.0 <= px < self.width and 0.0 <= py < self.height
+
+        for inter in self.interactions:
+            if not isinstance(inter, dict):
+                warnings.append(
+                    f"{self.name} : interaction non-dict ignorée ({inter!r})."
+                )
+                continue
+
+            pos = inter.get("pos")
+
+            # 1) Position manquante.
+            if pos is None:
+                warnings.append(
+                    f"{self.name} : interaction sans position (clé « pos » "
+                    f"manquante) : (action={inter.get('action')!r}, "
+                    f"name={inter.get('name')!r}) — impossible de l'associer "
+                    f"à un objet bleu ; à corriger dans settings.py."
+                )
+                continue
+
+            # 2) Format : doit être un tableau de 2 éléments.
+            if not isinstance(pos, (list, tuple)) or len(pos) != 2:
+                warnings.append(
+                    f"{self.name} : interaction pos mal formée ({pos!r}) : "
+                    f"doit être un tableau [x, y] de 2 nombres."
+                )
+                continue
+
+            # 3) Valeurs non-numériques.
+            try:
+                px, py = float(pos[0]), float(pos[1])
+            except (TypeError, ValueError):
+                warnings.append(
+                    f"{self.name} : interaction pos non numérique ({pos!r}) : "
+                    f"doit être un tableau [x, y] de 2 nombres."
+                )
+                continue
+            if math.isnan(px) or math.isnan(py):
+                warnings.append(
+                    f"{self.name} : interaction pos NaN ({pos!r}) : doit être "
+                    f"un tableau [x, y] de 2 nombres."
+                )
+                continue
+
+            # 4) Hors des bornes de la carte : signalée, mais conservée
+            #    (format valide ; orpheline garantie par _validate_interactions).
+            if not _is_in_bounds(px, py):
+                warnings.append(
+                    f"{self.name} : interaction pos hors carte "
+                    f"({int(round(px))}, {int(round(py))}) : doit être dans "
+                    f"[0, {self.width}] x [0, {self.height}]. Vérifie la "
+                    f"position dans settings.py."
+                )
+
+            cleaned.append(inter)
+
+        self.interactions = cleaned
+        self.interaction_warnings = warnings
+        return warnings
+
+
     def _validate_interactions(self):
         """Solution globale : associe chaque interaction à un objet bleu
         (tinté) à proximité, et valide la cohérence des deux côtés.
@@ -140,7 +235,9 @@ class GameMap:
         Les avertissements sont loggés à la création de la carte et
         accessibles via ``self.interaction_warnings``.
         """
-        warnings = []
+        # Appende aux avertissements de ``_sanitize_interactions``
+        # (positions manquantes / hors carte) ; si aucun, liste vide.
+        warnings = list(getattr(self, "interaction_warnings", []))
         self.interaction_warnings = warnings
 
         # 1) Associer chaque objet bleu à une interaction (par proximité).

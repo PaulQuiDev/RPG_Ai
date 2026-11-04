@@ -104,6 +104,12 @@ RPG_Ai/
   patrouille). |
 | **Aventures (JSON)** | ✅ `adventures/*.json` externalisées + loader +
   écran de lancement. |
+| **Validation des positions (P6)** | ✅ Chaque interaction (objet «
+  bleu ») est validée avant traitement : position manquante / mal
+  formée / non numérique => interaction retirée ; hors des bornes de la
+  carte => conservée (format valide) mais signalée. Avertissements loggés
+  à la création de la carte et dans `interaction_warnings` (visible en
+  console). Tests : `TestInteractionPosSanitization` (10 tests). |
 
 | **Type checking** | ✅ `Monster` accepte `str \| Path` pour `sprite_path` ;
   `assert path is not None` (Pyright détecte non-`None`) — plus d'erreurs
@@ -129,7 +135,7 @@ RPG_Ai/
 ├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
 ├── adventures/        # aventures JSON (demo-test.json, forest-quest.json)
-├── tests/             # suite pytest (187 tests)
+├── tests/             # suite pytest (197 tests)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 
@@ -148,7 +154,13 @@ RPG_Ai/
       Tests : `test_full_quest.py` (`test_full_quest_flow`,
       `test_real_navigation_respawn`). |
 | P6 | Objet « zone bleu » défini dans `settings` sans position doit retourner
-      un warning / erreur. ou position non correcte | ❌ à corriger |
+      un warning / erreur ; ou position non correcte (hors carte). | ✅ RESOLU —
+      validation globale au chargement (`_sanitize_interactions`) :
+      position manquante / mal formée / non numérique => interaction
+      **retirée** ; hors des bornes de la carte => conservée (format
+      valide) mais signalée. Avertissements loggés à la création de la
+      carte + dans `interaction_warnings`. Tests :
+      `TestInteractionPosSanitization` (10 tests). |
 | P7 | **IA des ennemis** : étendre la patrouille vers une machine à états
       (patrouille → aggro → attaque → fuite). | ❌ à faire |
 
@@ -186,5 +198,6 @@ RPG_Ai/
 - **Hébergement web** : migrer du GitHub Pages vers un hébergement web.
 
 ### Prochains étapes (ordre de priorité)
-1. **P6** — validation des objets bleus (warning / erreur si position manquante).
-2. **P7** — IA des ennemis (machine à états).
+1. **P6** ✅ RESOLU — validation des objets bleus (warning / erreur si
+   position manquante, mal formée, non numérique ou hors carte).
+2. **P7** — IA des ennemis (machine à états : patrouille → aggro → attaque → fuite).

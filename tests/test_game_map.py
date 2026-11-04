@@ -6,6 +6,7 @@ import pygame
 
 from .base import BaseTestCase
 from .factories import (
+    build_fake_map,
     build_fake_one_world,
     build_fake_two_worlds,
     fake_npc_data,
@@ -293,3 +294,110 @@ class TestGameMapSpawn(BaseTestCase):
         world = build_fake_one_world(self._tmp.name, blocked=[(300, 300, 100, 100)])
         x, y = world.game_map.find_nearest_walkable(350, 350, 5.0)
         self.assertTrue(world.game_map.can_stand_at(x, y, 5.0))
+
+
+class TestInteractionPosSanitization(BaseTestCase):
+    """P6 : validation de la position (clé « pos ») des interactions
+    (objets « zone bleu ») : manquante, mal formée, non numérique, hors
+    carte, ou valide."""
+
+    def test_missing_pos_flagged_and_removed(self):
+        # Interaction SANS « pos » => avertissement + interaction retirée.
+        gm = build_fake_map(
+            self._tmp.name,
+            blue=[(400, 400, 80, 80)],
+            interactions=[{"action": "t"}],
+        )
+        self.assertEqual(len(gm.interactions), 0)
+        self.assertTrue(any("sans position" in w for w in gm.interaction_warnings))
+
+    def test_pos_not_list_flagged_and_removed(self):
+        # pos non-liste (un nombre) => avertissement + retirée.
+        gm = build_fake_map(
+            self._tmp.name,
+            interactions=[{"pos": 123, "action": "t"}],
+        )
+        self.assertEqual(len(gm.interactions), 0)
+        self.assertTrue(any("pos mal formée" in w for w in gm.interaction_warnings))
+
+    def test_pos_wrong_length_flagged_and_removed(self):
+        # pos avec 1 seul élément => avertissement + retirée.
+        gm = build_fake_map(
+            self._tmp.name,
+            interactions=[{"pos": [100], "action": "t"}],
+        )
+        self.assertEqual(len(gm.interactions), 0)
+        self.assertTrue(any("pos mal formée" in w for w in gm.interaction_warnings))
+
+    def test_pos_non_numeric_flagged_and_removed(self):
+        # pos non-numérique => avertissement + retirée.
+        gm = build_fake_map(
+            self._tmp.name,
+            interactions=[{"pos": ["bad", "x"], "action": "t"}],
+        )
+        self.assertEqual(len(gm.interactions), 0)
+        self.assertTrue(any("pos non numérique" in w for w in gm.interaction_warnings))
+
+    def test_pos_out_of_bounds_flagged_and_kept(self):
+        # pos hors carte => avertissement « hors carte », mais conservée
+        # (format valide) ; elle est orpheline (pas de bleu à proximité).
+        gm = build_fake_map(
+            self._tmp.name,
+            interactions=[{"pos": [1000, 1000], "action": "t"}],
+        )
+        self.assertEqual(len(gm.interactions), 1)
+        self.assertTrue(any("hors carte" in w for w in gm.interaction_warnings))
+        self.assertTrue(any("sans objet bleu associé" in w for w in gm.interaction_warnings))
+
+    def test_valid_pos_not_flagged(self):
+        # pos valide, objet bleu associé => aucun avertissement.
+        gm = build_fake_map(
+            self._tmp.name,
+            blue=[(440, 440, 80, 80)],
+            interactions=[{"pos": [440, 440], "action": "t"}],
+        )
+        self.assertEqual(len(gm.interactions), 1)
+        self.assertFalse(any("hors carte" in w for w in gm.interaction_warnings))
+        self.assertFalse(any("sans position" in w for w in gm.interaction_warnings))
+        self.assertFalse(any("pos mal formée" in w for w in gm.interaction_warnings))
+        self.assertFalse(any("sans objet bleu associé" in w for w in gm.interaction_warnings))
+
+    def test_pos_at_edge_is_ok(self):
+        # pos au bord exact (0, 0) => valide (borne inclusive basse).
+        gm = build_fake_map(
+            self._tmp.name,
+            interactions=[{"pos": [0, 0], "action": "t"}],
+        )
+        self.assertFalse(any("hors carte" in w for w in gm.interaction_warnings))
+
+    def test_pos_at_opposite_edge_is_ok(self):
+        # pos au bord opposé (width-1, height-1) => valide.
+        gm = build_fake_map(
+            self._tmp.name,
+            interactions=[{"pos": [WINDOW_WIDTH - 1, WINDOW_HEIGHT - 1], "action": "t"}],
+        )
+        self.assertFalse(any("hors carte" in w for w in gm.interaction_warnings))
+
+    def test_non_dict_flagged_and_removed(self):
+        # interaction non-dict => avertissement + retirée.
+        gm = build_fake_map(
+            self._tmp.name,
+            interactions=["not a dict", {"pos": [400, 400], "action": "t"}],
+        )
+        self.assertEqual(len(gm.interactions), 1)
+        self.assertTrue(any("non-dict" in w for w in gm.interaction_warnings))
+
+    def test_valid_interactions_not_flagged(self):
+        # plusieurs interactions valides => aucune ne produit d'avertissement
+        # de position (elles sont associées à leurs objets bleus).
+        gm = build_fake_map(
+            self._tmp.name,
+            blue=[(100, 100, 40, 40), (200, 100, 40, 40)],
+            interactions=[
+                {"pos": [120, 120], "action": "t"},
+                {"pos": [220, 120], "action": "t"},
+            ],
+        )
+        self.assertEqual(len(gm.interactions), 2)
+        self.assertFalse(any("hors carte" in w for w in gm.interaction_warnings))
+        self.assertFalse(any("sans position" in w for w in gm.interaction_warnings))
