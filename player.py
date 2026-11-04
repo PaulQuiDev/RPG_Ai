@@ -1,6 +1,8 @@
 
 import pygame
 
+from pathlib import Path
+
 from settings import (
     IDLE_COL,
     ANIMATION_FPS,
@@ -62,6 +64,12 @@ class Player:
         self.anim_index = 0
         self.anim_timer = 0.0
         self.moving = False
+
+        # --- État « boss » (monster2) — P4 : le trône transforme le
+        # JOUEUR (monster2.png + vitesse 180), pas le monstre. ---
+        self._monster2 = False
+        self._original_speed = self.speed
+        self._original_sprite = self.sprite_path
 
 
     def update(self, dt, keys, game_map, collisions_enabled):
@@ -156,3 +164,47 @@ class Player:
         sprite_y += round(anchor_y * final_scale)
 
         screen.blit(sprite, (sprite_x, sprite_y))
+
+    def _reload_sprite(self):
+        """Recharge la feuille du sprite à ``self.sprite_path`` et la
+        redécoupe avec les mêmes paramètres (découpes + anchor) qu'à
+        l'initialisation."""
+        try:
+            sheet = pygame.image.load(str(self.sprite_path)).convert_alpha()
+        except (pygame.error, FileNotFoundError) as error:
+            raise RuntimeError(
+                f"Impossible de charger le sprite : {self.sprite_path}\n{error}"
+            ) from error
+        sheet_w, sheet_h = sheet.get_size()
+        print(f"Sprite sheet ({self.name}) : {sheet_w} x {sheet_h}")
+        self.sprites = slice_sprite_sheet(
+            sheet,
+            sheet_w,
+            sheet_h,
+            self.crop_size,
+            self.crop_offsets,
+        )
+
+    def transform_monster2(self, sprite_path, speed):
+        """Met le joueur dans l'état « boss » : sprite ``sprite_path``
+        (``monster2.png``) + ``speed`` augmenté (180). Idempotent ;
+        ``reset_monster2()`` remet l'apparence et la vitesse d'origine.
+
+        Seul l'apparence (sprite) et la vitesse changent — le comportement
+        (mouvement, collisions) reste celui du joueur."""
+        if self._monster2:
+            return
+        self._monster2 = True
+        self.sprite_path = Path(sprite_path)
+        self.speed = float(speed)
+        self._reload_sprite()
+
+    def reset_monster2(self):
+        """Remet le joueur à son apparence et sa vitesse d'origine
+        (annule l'état « boss »). Idempotent."""
+        if not self._monster2:
+            return
+        self._monster2 = False
+        self.sprite_path = Path(self._original_sprite)
+        self.speed = self._original_speed
+        self._reload_sprite()

@@ -13,7 +13,9 @@ Couverts :
   compris celles du haut), et toutes les cases du chemin praticables.
 - Mouvement (move_towards) : le monstre progresse vers le joueur (distance
   décroissante) et finit par le toucher sur la vraie carte.
-- Transformation monster2 (plus rapide + sprite monster2.png).
+- Transformation monster2 (P4) : les constantes MONSTER_SPRITE_FINAL /
+  MONSTER_SPEED2 et le mécanisme `set_sprite()` ; la transformation
+  déclenchée par le trône est du JOUEUR (pas du monstre).
 
 Notes :
 - Le monstre ne nécessite AUCUN `character_data` : son sprite est chargé
@@ -293,9 +295,10 @@ class TestMonsterTransformation(BaseTestCase):
         self.assertTrue(str(MONSTER_SPRITE).endswith("monster.png"))
         self.assertTrue(str(MONSTER_SPRITE_FINAL).endswith("monster2.png"))
 
-    def test_create_monster_respects_flag(self):
-        """Via Game._create_monster : le drapeau monster2_active décide
-        sprite/vitesse (la transformation après le trône)."""
+    def test_create_monster_always_normal(self):
+        """Via Game._create_monster (P4) : le drapeau monster2_active
+        transforme le JOUEUR, PAS le monstre. Le monstre créé est TOUJOURS
+        normal (monster.png, MONSTER_SPEED) — peu importe le drapeau."""
         from game import Game
         from settings import CHARACTERS
 
@@ -306,17 +309,18 @@ class TestMonsterTransformation(BaseTestCase):
             collisions_enabled=False,
             debug=False,
         )
-        # Drapeau BAISSÉ -> monstre lent + monster.png
+        # Drapeau BAISSÉ -> monstre normal (monster.png, MONSTER_SPEED).
         game.world.flag_set("monster2_active", False)
         m1 = game._create_monster(400.0, 400.0)
         self.assertEqual(m1.speed, 55.0)
         self.assertTrue(str(m1.sprite_path).endswith("monster.png"))
-        # Drapeau LEVÉ -> monstre rapide + monster2.png
+        # Drapeau LEVÉ -> le monstre reste normal (P4 : pas de
+        # transformation du monstre — la transformation est du JOUEUR).
         game.world.flag_set("monster2_active", True)
         m2 = game._create_monster(400.0, 400.0)
-        self.assertEqual(m2.speed, 180.0)
-        self.assertTrue(str(m2.sprite_path).endswith("monster2.png"))
-        self.assertGreater(m2.speed, m1.speed)
+        self.assertEqual(m2.speed, 55.0)
+        self.assertTrue(str(m2.sprite_path).endswith("monster.png"))
+        self.assertEqual(m2.speed, m1.speed)
 
     def test_set_sprite_switches_monster_to_monster2(self):
         """set_sprite() bascule le sprite (le mécanisme de transformation

@@ -89,7 +89,7 @@ class Game:
         self._monster = None                  # Monster vivant sur la carte de combat
         self._candle_lit = set()             # centres (x, y) des bougies allumées
         self._candle_lit_count = 0           # nombre de bougies allumées
-        self._monster2_transformed = False   # transformation du village appliquée ?
+        self._npc_flee_applied = False       # PNJ du village déjà en fuite ?
         self._prev_map_name = self.world.current_map_data.get("name")
         self._reset_message_until = 0.0      # timestamp (ms) du prochain reset message
         # Historique des actions (pour la sauvegarde / chargement).
@@ -200,8 +200,8 @@ class Game:
             flag_value = interaction.get("flag_value", True)
             self.world.flag_set(flag_name, flag_value)
             print(
-                f"Trône : monstre transformé "
-                f"(flag {flag_name} = {flag_value})."
+                f"Trône : drapeau {flag_name} = {flag_value}. "
+                f"Le joueur devient le boss (monster2.png)."
             )
             return
 
@@ -269,13 +269,23 @@ class Game:
             ):
                 self._reset_combat()
 
-        # Post-victoire : au village, transformer le monstre + fuite.
+        # Transformation du JOUEUR (P4) : dérivée du drapeau
+        # monster2_active (levé par le trône). Synchronise le joueur
+        # à chaque frame (idempotent ; couvre le chargement et tout
+        # changement de drapeau).
+        if self.world.flag_get("monster2_active"):
+            self._apply_player_monster2()
+        else:
+            self._reset_player_monster2()
+
+        # PNJ du village : ils fuient le joueur-boss (flag levé) — effet
+        # un seul passage par carte (comme à l'origine).
         if (
             self.world.current_map_data.get("name") == "Village"
-            and self._monster2_transformed is False
+            and not self._npc_flee_applied
             and self.world.flag_get("monster2_active")
         ):
-            self._apply_village_monster2()
+            self._apply_village_npc_flee()
 
         # Interaction des NPC au contact : message + comportement custom.
         for npc in self.game_map.npcs_in_contact(self.player):
@@ -541,7 +551,7 @@ class Game:
             self._monster = None
             self._candle_lit = set()
             self._candle_lit_count = 0
-            self._monster2_transformed = False
+            self._npc_flee_applied = False
             if curr == BOSS_COMBAT_MAP:
                 self._setup_monster()
 
@@ -556,14 +566,14 @@ class Game:
         return x, y
 
     def _create_monster(self, x, y):
-        """Crée le monstre (sprite + vitesse) selon l'état de transformation
-        (flag monster2_active posé par le trône)."""
-        transformed = bool(self.world.flag_get("monster2_active"))
+        """Crée le monstre à sa forme initiale (monster.png, vitesse
+        MONSTER_SPEED). La transformation monster2 (P4) n'agit plus sur
+        le monstre — c'est le JOUEUR qui est transformé par le trône."""
         return Monster(
             float(x),
             float(y),
-            speed=MONSTER_SPEED2 if transformed else MONSTER_SPEED,
-            sprite_path=MONSTER_SPRITE_FINAL if transformed else MONSTER_SPRITE,
+            speed=MONSTER_SPEED,
+            sprite_path=MONSTER_SPRITE,
         )
 
     def _setup_monster(self):
@@ -633,10 +643,31 @@ class Game:
         self._on_map_change()
         print("Monstre vaincu ! Passage à la carte 'Post Combat'.")
 
-    def _apply_village_monster2(self):
-        """Au village, après le trône (flag monster2_active) : transforme
-        le monstre du village en monster2.png et fait fuir tous les PNJ
-        du village (sauf le monstre, qui reste)."""
+    def _apply_player_monster2(self):
+        """Si le drapeau monster2_active est levé, transforme le JOUEUR
+        en boss (monster2.png + vitesse MONSTER_SPEED2). Idempotent.
+
+        (P4 : le trône transforme le JOUEUR, pas le monstre.)"""
+        if not self.world.flag_get("monster2_active"):
+            return
+        if getattr(self.player, "_monster2", False):
+            return
+        self.player.transform_monster2(MONSTER_SPRITE_FINAL, MONSTER_SPEED2)
+        self._log_action("player_monster2")
+        print(
+            "Tu es devenu le boss ! (monster2.png — plus rapide.)"
+        )
+
+    def _reset_player_monster2(self):
+        """Remet le joueur à son apparence / vitesse d'origine (si le
+        drapeau monster2_active est désactivé). Idempotent."""
+        if getattr(self.player, "_monster2", False):
+            self.player.reset_monster2()
+
+    def _apply_village_npc_flee(self):
+        """Au village, après le trône (flag levé) : tous les PNJ du
+        village fuient le joueur-boss (sauf le « Monstre », qui n'est
+        plus transformé — P4). Effet un seul passage par carte."""
         village_data = self.world.current_map_data.get("npcs", [])
         for data in village_data:
             npc = None
@@ -646,22 +677,16 @@ class Game:
                     break
             if npc is None:
                 continue
-            # Le "Monstre" du village : on transforme son sprite en
-            # monster2.png (il reste, c'est LUI le monstre).
+            # Le « Monstre » du village reste (pas transformé, P4).
             if data["name"] == "Monstre":
-                try:
-                    npc.set_sprite(str(BASE_DIR / "asset/carater/monster2.png"))
-                except RuntimeError as error:
-                    print(f"Transformation du monstre impossible : {error}")
                 continue
-            # Tous les autres PNJ du village : ils fuient.
             npc.behavior = "flee"
             if not hasattr(npc, "speed") or npc.speed is None or npc.speed < 20:
                 npc.speed = 45.0
-        self._monster2_transformed = True
-        self._log_action("transform_monster2")
+        self._npc_flee_applied = True
+        self._log_action("village_npc_flee")
         print(
-            "Monstre transformé (monster2.png) ! Tous les PNJ du village fuient."
+            "Tu es le boss ! Les PNJ du village fuient."
         )
 
     def _draw_candle_state(self):
@@ -764,7 +789,6 @@ class Game:
                 if self._monster is not None
                 else None
             ),
-            "monster2_transformed": bool(self._monster2_transformed),
             "action_history": list(self._action_history),
         }
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -813,14 +837,17 @@ class Game:
         for name, value in state.get("flags", {}).items():
             self.world.flag_set(name, bool(value))
 
-        # 3. Bougies + transformation.
+        # 3. Bougies.
         self._candle_lit = set(
             (float(x), float(y)) for (x, y) in state.get("candle_lit", [])
         )
         self._candle_lit_count = len(self._candle_lit)
-        self._monster2_transformed = bool(
-            state.get("monster2_transformed", False)
-        )
+
+        # 3b. Transformation du JOUEUR (P4) : le drapeau monster2_active
+        #     (restauré à l'étape 2) retransforme le joueur en boss,
+        #     s'il n'est pas déjà dans cet état.
+        if self.world.flag_get("monster2_active"):
+            self._apply_player_monster2()
 
         # 4. Monstre : recréé à sa position sauvée s'il est vivant.
         total = (

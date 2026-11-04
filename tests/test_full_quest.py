@@ -96,16 +96,21 @@ class TestFullQuest(BaseTestCase):
         self.assertIsNone(self.game._monster)
         self.assertTrue(self.game.world.flag_get("monster_defeated"))
 
-        # 5) Trône : transforme le monstre (flag monster2_active).
+        # 5) Trône : pose le drapeau monster2_active (P4 : transforme le
+        #    JOUEUR en boss, pas le monstre).
         throne = self._objects_by_action("transform_monster")
         self.assertEqual(len(throne), 1)
         self._interact_at(throne[0]["box"].centerx, throne[0]["box"].centery)
         self.assertTrue(self.game.world.flag_get("monster2_active"))
 
-        # 6) Retour au village : transformation + fuite des PNJ.
+        # 6) Retour au village : le joueur est en forme boss + les PNJ
+        #    du village fuient (P4 + fuite des PNJ).
         self._enter(0)
         self.assertEqual(self.game.world.current_map_data["name"], "Village")
-        self.assertTrue(self.game._monster2_transformed)
+        # Le joueur a bien été transformé en boss (monster2.png, vitesse 180).
+        self.assertTrue(self.game.player._monster2)
+        self.assertTrue(self.game.player.sprite_path.name == "monster2.png")
+        self.assertEqual(self.game.player.speed, 180.0)
         self.assertTrue(
             any(n.behavior == "flee" for n in self.game.game_map.npcs)
         )
