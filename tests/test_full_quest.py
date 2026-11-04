@@ -125,6 +125,60 @@ class TestFullQuest(BaseTestCase):
         self.assertEqual(self.game._candle_lit_count, 0)
         self.assertEqual(len(self.game._candle_lit), 0)
 
+    # -- P5 : navigation RÉELLE (exits), pas sélection directe.
+
+    def _edge_left(self):
+        """Mets le joueur sur la bordure gauche puis lance 2 updates :
+        la 1re déclenche `check_transition` (changement de carte), la
+        seconde ` _on_map_change` (reset / respawn)."""
+        self.game.player.x = 0.0
+        self.game.update(0.016)
+        self.game.update(0.016)
+
+    def _edge_right(self):
+        """Mets le joueur sur la bordure droite puis lance 2 updates."""
+        self.game.player.x = self.game.game_map.width - 1.0
+        self.game.update(0.016)
+        self.game.update(0.016)
+
+    def test_real_navigation_respawn(self):
+        """P5 : la ré-entrée dans le Boss Combat via le flux de navigation
+        réel (exits : Post Combat → Village → Forêt → Boss Combat) respawn
+        le monstre et reset les bougies, comme la re-sélection directe.
+        (Le bug P5 : « la map doit rester celle du post-combat » / re-entrée
+         par la forêt. )"""
+        # Boss Combat : tuer le monstre -> Post Combat.
+        self._enter(2)
+        self.assertEqual(
+            self.game.world.current_map_data["name"], BOSS_COMBAT_MAP
+        )
+        candles = self._objects_by_action("light_candle")
+        for o in candles:
+            self._interact_at(o["box"].centerx, o["box"].centery)
+        # La carte reste bien celle du post-combat (P5).
+        self.assertEqual(
+            self.game.world.current_map_data["name"], "Post Combat"
+        )
+
+        # Post Combat (bordure gauche) -> Village.
+        self._edge_left()
+        self.assertEqual(
+            self.game.world.current_map_data["name"], "Village"
+        )
+        # Village (bordure droite) -> Forêt.
+        self._edge_right()
+        self.assertEqual(
+            self.game.world.current_map_data["name"], "Forêt"
+        )
+        # Forêt (bordure droite) -> Boss Combat : respawn du monstre.
+        self._edge_right()
+        self.assertEqual(
+            self.game.world.current_map_data["name"], BOSS_COMBAT_MAP
+        )
+        self.assertIsNotNone(self.game._monster)
+        self.assertEqual(self.game._candle_lit_count, 0)
+        self.assertEqual(len(self.game._candle_lit), 0)
+
 
 class TestSaveLoad(BaseTestCase):
     """Sauvegarde / chargement de l'état du jeu (cycle JSON)."""
