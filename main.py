@@ -53,6 +53,51 @@ def _parse_window_size(value):
     return width, height
 
 
+def _build_parser():
+    """Construit le parser d'options CLI.
+
+    `--window` et `--fullscreen` sont mutuellement exclusifs : si les deux
+    sont passés, `parse_args()` lève `SystemExit` (code 2).
+    """
+    parser = argparse.ArgumentParser(description="Jeu RPG (pygame)")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--window",
+        metavar="WxH",
+        help="résolution de la fenêtre (ex. 800x600). Défaut : 960x720.",
+    )
+    group.add_argument(
+        "--fullscreen",
+        action="store_true",
+        help="plein écran (résolution logique 960x720 étendue au moniteur).",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="affiche la carte de collision, les boîtes d'interaction "
+        "(itboxes) et la position du joueur (console + overlay)",
+    )
+    parser.add_argument(
+        "--save",
+        metavar="PATH",
+        help="chemin du fichier de sauvegarde (utilisé par S et par défaut "
+        "au chargement). Défaut : <projet>/saves/game.json.",
+    )
+    parser.add_argument(
+        "--load",
+        metavar="PATH",
+        help="fichier à charger au démarrage (reprise de partie). "
+        "Défaut : sauvegarde par défaut.",
+    )
+    parser.add_argument(
+        "--adv",
+        metavar="PATH",
+        help="chemin d'un fichier d'aventure (JSON) à lancer directement "
+        "(bypass du menu de sélection).",
+    )
+    return parser
+
+
 def _blit_rect(game_w, game_h, win_w, win_h):
     """Retourne (x, y, bw, bh) : le plus grand rectangle centré de la
     fenêtre qui contient le jeu (ratio d'aspect game_w x game_h) sans le
@@ -150,45 +195,7 @@ def _show_error_window(screen, font, message):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Jeu RPG (pygame)")
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="affiche la carte de collision, les boîtes d'interaction "
-        "(itboxes) et la position du joueur (console + overlay)",
-    )
-    parser.add_argument(
-        "--window",
-        metavar="WxH",
-        help="résolution de la fenêtre (ex. 800x600). Défaut : 960x720.",
-    )
-    parser.add_argument(
-        "--fullscreen",
-        action="store_true",
-        help="plein écran (résolution logique 960x720 étendue au moniteur).",
-    )
-    parser.add_argument(
-        "--save",
-        metavar="PATH",
-        help="chemin du fichier de sauvegarde (utilisé par S et par défaut "
-        "au chargement). Défaut : <projet>/saves/game.json.",
-    )
-    parser.add_argument(
-        "--load",
-        metavar="PATH",
-        help="chemin du fichier à charger au démarrage (reprise de partie). "
-        "Défaut : sauvegarde par défaut.",
-    )
-    parser.add_argument(
-        "--adv",
-        metavar="PATH",
-        help="chemin d'un fichier d'aventure (JSON) à lancer directement "
-        "(bypass du menu de sélection).",
-    )
-    args = parser.parse_args()
-
-    if args.window and args.fullscreen:
-        parser.error("--window et --fullscreen sont incompatibles")
+    args = _build_parser().parse_args()
 
     pygame.init()
 
