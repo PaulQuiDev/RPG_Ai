@@ -265,5 +265,16 @@
       }
     }
   ],
-  "sprite_overrides": {}
+  "sprite_overrides": {},
+  "quest": {
+    "monster_sprite": "asset/carater/monster.png",
+    "monster2_sprite": "asset/carater/monster2.png",
+    "monster_speed": 55.0,
+    "monster2_speed": 180.0,
+    "monster_spawn": [
+      860,
+      540
+    ],
+    "candle_total": 5
+  }
 }

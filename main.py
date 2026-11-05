@@ -278,6 +278,11 @@ def main():
     # hors-écran ; main.py blitte (smoothscale + letterbox) cette surface
     # dans la fenêtre. Toute la logique de jeu (coordonnées, HUD, sprites,
     # collisions) reste en 960x720 : changer la fenêtre ne casse rien.
+    # La configuration de la quête (bloc ``quest`` de l'aventure) est passée
+    # explicitement au ``Game`` : c'est elle qui pilote le monstre, les
+    # bougies et la transformation, pas des valeurs codées en dur.
+    quest = meta.get("quest")
+
     game_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
     try:
         game = Game(
@@ -288,6 +293,7 @@ def main():
             collisions_enabled=COLLISIONS_ENABLED_DEFAULT,
             debug=args.debug,
             save_path=args.save,
+            quest=quest,
         )
     except Exception as error:
         console_msg = (

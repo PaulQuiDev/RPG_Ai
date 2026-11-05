@@ -17,11 +17,17 @@ from pathlib import Path
 import pygame
 
 from settings import ANIMATION, ANIMATION_FPS, IDLE_COL, SPRITE_SCALE
+from settings import QUEST_CONFIG
 from sprite_loader import resolve_crop_config, slice_sprite_sheet
 
 BASE_DIR = Path(__file__).resolve().parent
-MONSTER_SPRITE = BASE_DIR / "asset/carater/monster.png"
-MONSTER_SPRITE_FINAL = BASE_DIR / "asset/carater/monster2.png"
+
+# Les sprites du monstre et de sa transformation (joueur -> boss) ne sont
+# plus en dur : ils proviennent de la configuration de la quête de l'aventure
+# (bloc ``quest`` du JSON). C'est ce qui permet de modifier la transformation
+# depuis l'aventure importée, sans toucher au code.
+MONSTER_SPRITE = QUEST_CONFIG.monster_sprite
+MONSTER_SPRITE_FINAL = QUEST_CONFIG.monster2_sprite
 
 CELL_SIZE = 16.0
 

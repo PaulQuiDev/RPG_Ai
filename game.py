@@ -13,23 +13,25 @@ from datetime import datetime
 import pygame
 from pathlib import Path
 
-from settings import BASE_DIR, COLLISIONS_ENABLED_DEFAULT
+from settings import BASE_DIR, COLLISIONS_ENABLED_DEFAULT, QUEST_CONFIG
 from behaviors import BEHAVIORS, go_to_map
 from player import Player
 from world import World
-from monster import Monster, MONSTER_SPRITE, MONSTER_SPRITE_FINAL
-
+from monster import Monster
 
 # --- Quête du monstre (Boss Combat) ------------------------------------------
-# Nom des cartes du combat (settings.MAPS).
-BOSS_COMBAT_MAP = "Boss Combat"
-POST_COMBAT_MAP = "Post Combat"
+# Tout vient de la configuration data-driven de la quête (bloc ``quest``
+# de l'aventure, voir ``quest_config``). Ces constantes module restent
+# exportées pour compatibilité (tests, `main`). Pour une aventure chargée
+# via ``--adv``, le ``Game`` utilise la ``quest`` qui lui est passée.
+BOSS_COMBAT_MAP = QUEST_CONFIG.boss_combat_map
+POST_COMBAT_MAP = QUEST_CONFIG.post_combat_map
 # Point de départ du monstre (monster.png) dans la pièce de combat.
-MONSTER_START = (860, 540)
-# Vitesse du monstre (px/s) — lente, pour laisser le joueur allumer les 5 bougies.
-MONSTER_SPEED = 55.0
+MONSTER_START = QUEST_CONFIG.monster_spawn
+# Vitesse du monstre (px/s) — lente, pour laisser le joueur allumer les bougies.
+MONSTER_SPEED = QUEST_CONFIG.monster_speed
 # Vitesse du monstre transformé (monster2.png) — plus rapide.
-MONSTER_SPEED2 = 180.0
+MONSTER_SPEED2 = QUEST_CONFIG.monster2_speed
 
 
 class GameState:
@@ -54,6 +56,7 @@ class Game:
         world=None,
         debug=False,
         save_path=None,
+        quest=None,
     ):
         """
         Args:
@@ -65,6 +68,9 @@ class Game:
             character_index: Index du personnage initial.
             world: Optionnel — monde déjà construit (injection de dépendance,
                 test). Si `None`, on en construit un à partir de `maps`.
+            quest: Optionnel — configuration de la quête (QuestConfig, venue
+                du bloc ``quest`` de l'aventure chargée). Si `None`, on
+                utilise l'aventure par défaut (`settings.QUEST_CONFIG`).
         """
         self.screen = screen
         self.font = font
@@ -99,6 +105,11 @@ class Game:
             Path(str(save_path)) if save_path
             else (BASE_DIR / "saves" / "game.json")
         )
+
+        # --- Quête (data-driven) : configuration venue du JSON d'aventure
+        # (bloc ``quest``). Par défaut : l'aventure par défaut ;
+        # ``main.py`` (``--adv``) passe celle de l'aventure chargée.
+        self.quest = quest if quest is not None else QUEST_CONFIG
 
         # Conditions globales (quêtes) : drapeaux -> conditions.
         self.world.register_condition(
@@ -201,7 +212,7 @@ class Game:
             self.world.flag_set(flag_name, flag_value)
             print(
                 f"Trône : drapeau {flag_name} = {flag_value}. "
-                f"Le joueur devient le boss (monster2.png)."
+                "Le joueur est transformé en boss (config de la quête)."
             )
             return
 
@@ -258,7 +269,8 @@ class Game:
         # Quête du monstre : si combat en cours et monstre vivant.
         if (
             self._monster is not None
-            and self.world.current_map_data.get("name") == BOSS_COMBAT_MAP
+            and self.world.current_map_data.get("name")
+            == self.quest.boss_combat_map
         ):
             if self._monster.move_towards(
                 self.player.x,
@@ -332,7 +344,8 @@ class Game:
         """Affiche le monstre (si vivant et sur la carte de combat)."""
         if (
             self._monster is None
-            or self.world.current_map_data.get("name") != BOSS_COMBAT_MAP
+            or self.world.current_map_data.get("name")
+            != self.quest.boss_combat_map
         ):
             return
         self._monster.draw(self.screen, self.game_map)
@@ -552,15 +565,15 @@ class Game:
             self._candle_lit = set()
             self._candle_lit_count = 0
             self._npc_flee_applied = False
-            if curr == BOSS_COMBAT_MAP and not self.world.flag_get(
+            if curr == self.quest.boss_combat_map and not self.world.flag_get(
                 "monster_defeated"
             ):
                 self._setup_monster()
 
     def _get_monster_spawn(self):
-        """Retourne une position walkable proche de MONSTER_START
-        pour le monstre (collision_radius=12)."""
-        x, y = MONSTER_START
+        """Retourne une position walkable proche du spawn du monstre
+        (déclaré dans la quête) pour le monstre (collision_radius=12)."""
+        x, y = self.quest.monster_spawn
         if not self.game_map.can_stand_at(x, y, 12):
             nx, ny = self.game_map.find_nearest_walkable(x, y, 12)
             print(f"Spawn monstre ajusté : ({x},{y}) -> ({nx},{ny})")
@@ -568,14 +581,14 @@ class Game:
         return x, y
 
     def _create_monster(self, x, y):
-        """Crée le monstre à sa forme initiale (monster.png, vitesse
-        MONSTER_SPEED). La transformation monster2 (P4) n'agit plus sur
-        le monstre — c'est le JOUEUR qui est transformé par le trône."""
+        """Crée le monstre à sa forme initiale (sprite et vitesse déclarés
+        dans la quête). La transformation (P4) n'agit plus sur le monstre
+        — c'est le JOUEUR qui est transformé par le trône."""
         return Monster(
             float(x),
             float(y),
-            speed=MONSTER_SPEED,
-            sprite_path=MONSTER_SPRITE,
+            speed=self.quest.monster_speed,
+            sprite_path=self.quest.monster_sprite,
         )
 
     def _setup_monster(self):
@@ -606,8 +619,10 @@ class Game:
         )
 
     def _light_candle(self, focus):
-        """Allume une bougie (centre de l'objet focalisé). Les 5 bougies
-        allumées -> le monstre meurt et on bascule sur la carte Post Combat."""
+        """Allume une bougie (centre de l'objet focalisé). Toutes les
+        bougies allumées -> le monstre meurt et on bascule sur la carte
+        Post Combat."""
+        total = self.quest.candle_total
         if self.world.flag_get("monster_defeated"):
             print(
                 "Le monstre est déjà vaincu : combat terminé, "
@@ -618,17 +633,18 @@ class Game:
         cy = round(focus["box"].centery)
         key = (cx, cy)
         if key in self._candle_lit:
-            remaining = 5 - self._candle_lit_count
+            remaining = total - self._candle_lit_count
             print(
-                f"Bougie déjà allumée (allumées : {self._candle_lit_count}/5). "
+                f"Bougie déjà allumée (allumées : "
+                f"{self._candle_lit_count}/{total}). "
                 f"{remaining} restante(s)."
             )
             return
         self._candle_lit.add(key)
         self._candle_lit_count += 1
         self._log_action("light_candle", cx=cx, cy=cy)
-        print(f"Bougie allumée ({cx},{cy}) — {self._candle_lit_count}/5.")
-        if self._candle_lit_count >= 5:
+        print(f"Bougie allumée ({cx},{cy}) — {self._candle_lit_count}/{total}.")
+        if self._candle_lit_count >= total:
             self._defeat_monster()
 
     def _defeat_monster(self):
@@ -642,33 +658,34 @@ class Game:
         self.world.flag_set("monster_defeated", True)
         self._log_action("monster_defeated")
         world = self.world
+        target_map_name = self.quest.post_combat_map or "Post Combat"
         target_index = None
         for i, md in enumerate(world.maps):
-            if md["name"] == POST_COMBAT_MAP:
+            if md["name"] == target_map_name:
                 target_index = i
                 break
         if target_index is None:
-            print("Carte 'Post Combat' introuvable.")
+            print(f"Carte de fin de combat introuvable ({target_map_name}).")
             return
         world.change_map(target_index, self.player, (500, 360))
         self.game_map = world.game_map
         self._on_map_change()
-        print("Monstre vaincu ! Passage à la carte 'Post Combat'.")
+        print("Monstre vaincu ! Passage à la carte de fin de combat.")
 
     def _apply_player_monster2(self):
         """Si le drapeau monster2_active est levé, transforme le JOUEUR
-        en boss (monster2.png + vitesse MONSTER_SPEED2). Idempotent.
+        en boss (sprite et vitesse déclarés dans la quête). Idempotent.
 
         (P4 : le trône transforme le JOUEUR, pas le monstre.)"""
         if not self.world.flag_get("monster2_active"):
             return
         if getattr(self.player, "_monster2", False):
             return
-        self.player.transform_monster2(MONSTER_SPRITE_FINAL, MONSTER_SPEED2)
-        self._log_action("player_monster2")
-        print(
-            "Tu es devenu le boss ! (monster2.png — plus rapide.)"
+        self.player.transform_monster2(
+            self.quest.monster2_sprite, self.quest.monster2_speed
         )
+        self._log_action("player_monster2")
+        print("Tu es devenu le boss ! (plus rapide.)")
 
     def _reset_player_monster2(self):
         """Remet le joueur à son apparence / vitesse d'origine (si le
@@ -706,7 +723,8 @@ class Game:
         (sur la couche de dessus, pour la voir au-dessus du joueur)."""
         if (
             not self._candle_lit
-            or self.world.current_map_data.get("name") != BOSS_COMBAT_MAP
+            or self.world.current_map_data.get("name")
+            != self.quest.boss_combat_map
         ):
             return
         now = pygame.time.get_ticks()
@@ -727,13 +745,13 @@ class Game:
         """Nombre de bougies à allumer (objets ``light_candle``) sur la
         carte de combat — pour l'HUD de combat et les tests.
         Zéro hors de la carte de combat."""
-        if self.world.current_map_data.get("name") != BOSS_COMBAT_MAP:
+        if self.world.current_map_data.get("name") != self.quest.boss_combat_map:
             return 0
         return self.game_map.count_action("light_candle")
 
     def _draw_combat_hud(self):
         """Affiche l'état du combat (compteur de bougies + message reset)."""
-        if self.world.current_map_data.get("name") != BOSS_COMBAT_MAP:
+        if self.world.current_map_data.get("name") != self.quest.boss_combat_map:
             return
         w, h = self.screen.get_size()
         if self.world.flag_get("monster_defeated"):
@@ -870,7 +888,7 @@ class Game:
         # 4. Monstre : recréé à sa position sauvée s'il est vivant.
         total = (
             self.combat_candle_total()
-            if state.get("map_name") == BOSS_COMBAT_MAP
+            if state.get("map_name") == self.quest.boss_combat_map
             else 0
         )
         monster_pos = state.get("monster_pos")

@@ -2,6 +2,8 @@ from pathlib import Path
 
 import json
 
+from quest_config import load_quest
+
 BASE_DIR = Path(__file__).resolve().parent
 ADVENTURES_DIR = BASE_DIR / "adventures"
 
@@ -215,12 +217,16 @@ def load_adventure(config_path=None):
     characters = [_load_character(c) for c in data.get("characters", [])]
     maps = [_load_map(m) for m in data.get("maps", [])]
 
+    # --- Quête (data-driven : bloc ``quest`` du JSON) ---
+    quest = load_quest(data.get("quest"), maps, BASE_DIR)
+
     meta = {
         "name": data.get("name", config_path.stem),
         "title": data.get("title", config_path.stem),
         "window_title": data.get("window_title", WINDOW_TITLE),
         "start_map": data.get("start_map"),
         "sprite_overrides": data.get("sprite_overrides") or {},
+        "quest": quest,
     }
 
     return characters, maps, meta
@@ -309,5 +315,11 @@ NPC_INTERACT_COOLDOWN = 3.0
 # --- Couche de premier plan (FG) ---
 # Surface min de composante FG conservée (filtre le bruit).
 FG_MIN_AREA = 50
-# Chargement de l'aventure par défaut (à la charge du module).
+# --- Chargement de l'aventure par défaut (à la charge du module).
+# ---------------------------------------------------------------------------
 CHARACTERS, MAPS, ADVANTURE_META = load_adventure()
+
+# Configuration de la quête de l'aventure par défaut. C'est la valeur
+# utilisée par ``Game`` quand aucune ``quest`` n'est passée explicitement.
+# ``main.py`` (``--adv``) passe la ``quest`` de l'aventure chargée.
+QUEST_CONFIG = ADVANTURE_META["quest"]
