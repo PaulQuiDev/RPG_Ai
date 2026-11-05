@@ -523,6 +523,29 @@ class Game:
             )
             screen.blit(n_txt, (nx + 6, ny - 24))
 
+        # Déplacements des NPCs (patrouille) : si un NPC a des waypoints
+        # (``path``), on dessine le tracé fermé (segments magenta), les
+        # waypoints, on met en valeur le waypoint courant (jaune) et une
+        # flèche (position actuelle -> waypoint suivant) pour montrer la
+        # direction du déplacement.
+        for npc in gmap.npcs:
+            path = getattr(npc, "path", []) or []
+            if len(path) < 2:
+                continue
+            pts = [(int(px), int(py)) for (px, py) in path]
+            pygame.draw.lines(screen, (255, 0, 128), True, pts, 2)
+            current = int(getattr(npc, "path_index", 0)) % len(pts)
+            for i, p in enumerate(pts):
+                pygame.draw.circle(
+                    screen,
+                    (255, 255, 0) if i == current else (255, 0, 128),
+                    p,
+                    6 if i == current else 3,
+                )
+            # Flèche : position actuelle -> waypoint suivant (direction).
+            nxt = pts[(current + 1) % len(pts)]
+            self._draw_arrowhead(screen, (int(npc.x), int(npc.y)), nxt)
+
         # Chemin A* prévu du monstre (ligne blanche + flèche vers le joueur).
         # Affiché uniquement en --debug : aide à voir où le monstre va.
         if self._monster is not None:
