@@ -180,10 +180,16 @@ class Game:
         next_index = (self.character_index + 1) % len(self.characters)
         character_data = self.characters[next_index]
         try:
+            # Le nouveau personnage conserve la croissance acquise
+            # (nombre de PNJ dévorés) — le boss ne « perd » rien en
+            # changeant de personnage.
+            old_eaten = getattr(self.player, "eaten_count", 0)
             self.player = Player(
                 self.player.x, self.player.y, character_data
             )
             self.character_index = next_index
+            if old_eaten > 0:
+                self.player.feed(old_eaten)
         except (RuntimeError, ValueError) as error:
             print(
                 "Changement de personnage impossible : " f"{error}"
@@ -294,6 +300,15 @@ class Game:
             self._apply_player_monster2()
         else:
             self._reset_player_monster2()
+
+        # --- Dévoration des PNJ (boss) : au contact, si transformé ---
+        # Le joueur-boss « mange » les PNJ qu'il touche : ils disparaissent
+        # (retirés de la carte et de la donnée persistante, donc ils ne
+        # reparaîtront pas) et le joueur grossit (taille + hitbox +
+        # vitesse). L'effet est cumulatif : un pas par PNJ dévoré.
+        if self.world.flag_get("monster2_active"):
+            for npc in self.game_map.npcs_in_contact(self.player):
+                self._eat_npc(npc)
 
         # PNJ du village : ils fuient le joueur-boss (flag levé) — effet
         # un seul passage par carte (comme à l'origine).
@@ -722,6 +737,51 @@ class Game:
         drapeau monster2_active est désactivé). Idempotent."""
         if getattr(self.player, "_monster2", False):
             self.player.reset_monster2()
+
+    def _eat_npc(self, npc):
+        """Le joueur-boss « mange » un PNJ au contact.
+
+        - Le PNJ disparaît : retiré de la carte courante (liste live)
+          et de la donnée persistante (pour ne pas reparaître si on
+          rechange/recharge la carte).
+        - Le joueur grossit (taille / hitbox / vitesse), de façon
+          cumulative : un pas par PNJ dévoré (voir ``Player.feed``).
+
+        Idempotent : si le PNJ n'est déjà plus dans la liste, rien
+        n'est fait (sauf la croissance, qui est idempotente elle
+        aussi).
+        """
+        name = npc.name or "un PNJ"
+
+        # Retire le PNJ de la carte courante (liste live).
+        if npc in self.game_map.npcs:
+            self.game_map.npcs.remove(npc)
+
+        # Retire-le de la donnée persistante (carte courante) : sans cela
+        # il reparaîtrait au prochain changement de carte.
+        if (
+            self.world is not None
+            and 0 <= self.world.map_index < len(self.world.maps)
+        ):
+            map_npcs = self.world.maps[self.world.map_index].get("npcs", [])
+            # ``npc._data`` est exactement le dictionnaire stocké dans la
+            # donnée persistante (même objet que ``game_map.npc_data``) :
+            # on peut donc le retirer par référence.
+            try:
+                map_npcs.remove(npc._data)
+            except (ValueError, TypeError):
+                # Le PNJ n'était pas dans la donnée (déjà retiré) :
+                # pas d'incohérence possible (idempotente).
+                pass
+
+        # Croissance du joueur (cumul) : un pas de plus.
+        self.player.feed(self.player.eaten_count + 1)
+
+        print(
+            f"Tu as mangé {name} ! "
+            f"(PNJ dévorés : {self.player.eaten_count})"
+        )
+        self._log_action("eat_npc", name=name)
 
     def _apply_village_npc_flee(self):
         """Au village, après le trône (flag levé) : tous les PNJ du

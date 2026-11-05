@@ -105,6 +105,10 @@ class Npc:
             raise ValueError("NPC : champ 'pos' manquant.")
 
         self.index = index
+        # Réfrence sur le dict source (déclaré dans settings/JSON) :
+        # permet au monde de retirer précisément *ce* PNJ de la donnée
+        # persistante de la carte (même objet que self.npc_data[i]).
+        self._data = data
         self.name = str(data["name"])
         self.sprite_path = data["sprite"]
         self.behavior = behavior

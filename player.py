@@ -13,6 +13,12 @@ from settings import (
 )
 from sprite_loader import resolve_crop_config, slice_sprite_sheet
 
+# --- Croissance du joueur (boss) — cumul par PNJ dévoré ---
+# Chaque PNJ « mangé » au contact augmente, de façon cumulative :
+SCALE_INCREMENT = 0.08    # +8 % de taille (base_scale) par PNJ
+RADIUS_INCREMENT = 4.0    # +4 px de hitbox (collision_radius) par PNJ
+SPEED_INCREMENT = 8.0     # +8 px/s de vitesse par PNJ
+
 
 class Player:
     def __init__(self, x, y, character_data):
@@ -27,6 +33,14 @@ class Player:
         self.collision_radius = character_data.get(
             "collision_radius", 5
         )
+
+        # Valeurs de référence (avant transformation / croissance).
+        self._base_scale = float(self.base_scale)
+        self._base_speed = float(self.speed)
+        self._base_collision_radius = float(self.collision_radius)
+
+        # Croissance (boss) : cumul par PNJ dévoré.
+        self.eaten_count = 0
 
         # Config de découpe résolue : override par personnage (data-driven)
         # + défauts globaux. Le blit et l'anchor en utilisent.
@@ -68,8 +82,11 @@ class Player:
         # --- État « boss » (monster2) — P4 : le trône transforme le
         # JOUEUR (monster2.png + vitesse 180), pas le monstre. ---
         self._monster2 = False
-        self._original_speed = self.speed
+        self._monster2_speed = self._base_speed
         self._original_sprite = self.sprite_path
+
+        # Synchronise les stats (base_scale / speed / collision_radius).
+        self._sync_stats()
 
 
     def update(self, dt, keys, game_map, collisions_enabled):
@@ -190,21 +207,61 @@ class Player:
         (``monster2.png``) + ``speed`` augmenté (180). Idempotent ;
         ``reset_monster2()`` remet l'apparence et la vitesse d'origine.
 
-        Seul l'apparence (sprite) et la vitesse changent — le comportement
-        (mouvement, collisions) reste celui du joueur."""
+        Seul l'apparence (sprite) et la vitesse de base changent — le
+        comportement (mouvement, collisions) reste celui du joueur.
+        La croissance (taille / hitbox / bonus vitesse) acquise par la
+        dévoration de PNJ est conservée (voir ``feed`` / ``_sync_stats``)."""
         if self._monster2:
             return
         self._monster2 = True
+        self._monster2_speed = float(speed)
         self.sprite_path = Path(sprite_path)
-        self.speed = float(speed)
         self._reload_sprite()
+        self._sync_stats()
 
     def reset_monster2(self):
         """Remet le joueur à son apparence et sa vitesse d'origine
-        (annule l'état « boss »). Idempotent."""
+        (annule l'état « boss »). La croissance acquise par la dévoration
+        de PNJ (taille / hitbox / bonus vitesse) est CONSERVÉE.
+        Idempotent."""
         if not self._monster2:
             return
         self._monster2 = False
         self.sprite_path = Path(self._original_sprite)
-        self.speed = self._original_speed
         self._reload_sprite()
+        self._sync_stats()
+
+    def feed(self, count):
+        """Dévoration : le joueur vient de manger des PNJ (cumul).
+
+        ``count`` = nombre TOTAL de PNJ dévorés (>= l'actuel). La taille
+        (``base_scale``), le hitbox (``collision_radius``) et la vitesse
+        augmentent de façon proportionnelle à chaque PNJ. Idempotent /
+        fail-safe : aucune régression possible.
+        """
+        count = int(count)
+        if count <= self.eaten_count:
+            return
+        self.eaten_count = count
+        self._sync_stats()
+
+    def _sync_stats(self):
+        """Recalcule ``base_scale``, ``speed`` et ``collision_radius`` à
+        partir des valeurs de référence, de l'état de transformation
+        (``_monster2``) et de la croissance (``eaten_count``).
+
+        Appelé par ``transform_monster2`` / ``reset_monster2`` / ``feed``
+        (et à l'init) pour garder les stats cohérentes.
+        """
+        growth = 1.0 + SCALE_INCREMENT * self.eaten_count
+        self.base_scale = self._base_scale * growth
+        self.collision_radius = (
+            self._base_collision_radius
+            + RADIUS_INCREMENT * self.eaten_count
+        )
+        base_speed = (
+            self._monster2_speed
+            if self._monster2
+            else self._base_speed
+        )
+        self.speed = base_speed + SPEED_INCREMENT * self.eaten_count
