@@ -120,6 +120,11 @@ class Game:
             "monster2_active",
             lambda w, p: w.flags.get("monster2_active", False),
         )
+        # Redirection des sorties (quêtes) : après la mort du monstre, une
+        # sortie vers la carte de combat bascule vers la carte de fin de
+        # combat (Post Combat) — le trône (sur Post Combat) reste accessible
+        # et le joueur ne retombe pas dans la salle de combat vide.
+        self.world.set_dest_redirect(self._redirect_to_post_combat)
 
     # -- Propriétés publics ---------------------------------------------------
 
@@ -671,6 +676,31 @@ class Game:
         self.game_map = world.game_map
         self._on_map_change()
         print("Monstre vaincu ! Passage à la carte de fin de combat.")
+
+    def _redirect_to_post_combat(self, destination_name, player):
+        """Redirection de destination (quêtes) : après la mort du monstre,
+        une sortie vers la carte de combat bascule vers la carte de fin de
+        combat (``Post Combat``).
+
+        Renvoie ``None`` (pas de redirection) sauf si :
+          - le monstre est vaincu (flag ``monster_defeated``), ET
+          - la destination est la carte de combat (``boss_combat_map``), ET
+          - la carte de fin de combat existe dans l'aventure.
+
+        C'est ce qui permet, après le combat, de revenir vers l'aire du boss
+        (via la forêt) et de se retrouver sur la carte du trône (Post
+        Combat), d'où on peut interagir avec le trône pour se transformer
+        (P4), même après coup.
+        """
+        if not self.world.flag_get("monster_defeated"):
+            return None
+        if destination_name != self.quest.boss_combat_map:
+            return None
+        post_name = self.quest.post_combat_map
+        for md in self.world.maps:
+            if md.get("name") == post_name:
+                return post_name
+        return None
 
     def _apply_player_monster2(self):
         """Si le drapeau monster2_active est levé, transforme le JOUEUR

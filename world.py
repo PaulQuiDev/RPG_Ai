@@ -29,6 +29,10 @@ class World:
         # Conditions nommées : nom -> fn(world, player) -> bool.
         # Évaluées au moment où une transition/interaction les demande.
         self.conditions = {}
+        # Redirection de destination (quêtes) : fn((destination_name, player)
+        # -> nom de carte ou None). Déclarée par la Game (ex. : après le
+        # boss, Boss Combat -> Post Combat).
+        self._dest_redirect = None
 
     @property
     def current_map_data(self):
@@ -100,6 +104,18 @@ class World:
     def register_condition(self, name, fn):
         """Nomme une condition `fn(world, player) -> bool`."""
         self.conditions[str(name)] = fn
+
+    def set_dest_redirect(self, fn):
+        """Déclare une redirection de destination (quêtes).
+
+        ``fn`` reçoit ``(destination_name, player)`` et retourne soit un
+        nouveau nom de carte (``str``), soit ``None`` (pas de redirection).
+        S'applique dans ``check_transition`` AVANT la résolution de l'index :
+        la sortie vers la carte cible est réorientée vers la carte retournée.
+        Exemple : après la mort du monstre, une sortie vers ``Boss Combat``
+        bascule vers ``Post Combat``.
+        """
+        self._dest_redirect = fn
 
     def flag_condition(self, name, value=True):
         """Condition « le drapeau `name` vaut `value` » (retourne une fn).
@@ -217,6 +233,15 @@ class World:
             return False
 
         destination_name = exit_data["map"]
+
+        # Redirection (quêtes) : une fonction optionnelle (déclarée par la
+        # Game via ``set_dest_redirect``) peut réorienter la destination
+        # AVANT le changement de carte — ex. : après la mort du monstre,
+        # une sortie vers ``Boss Combat`` bascule vers ``Post Combat``.
+        if self._dest_redirect is not None:
+            new_name = self._dest_redirect(destination_name, player)
+            if new_name and new_name != destination_name:
+                destination_name = new_name
 
         destination_index = next(
             (

@@ -2,8 +2,8 @@
 
 Couvre la bonne exécution des objets à travers tout le cycle :
 Village -> Forêt -> Boss Combat (5 bougies) -> Post Combat (trône)
--> Village (transformation + fuite des PNJ) -> re-entrée Boss Combat
-(monstre déjà vaincu : pas de respawn, plus de bougies).
+-> Village (transformation + fuite des PNJ) -> re-entrée aire du boss
+(Post Combat, redirection post-victoire : pas de respawn, plus de bougies).
 
 C'est aussi le test du compteur HUD « Bougies : x/5 » (pas /10)
 et du cycle sauvegarde / chargement de l'état du jeu (JSON).
@@ -143,12 +143,14 @@ class TestFullQuest(BaseTestCase):
         self.game.update(0.016)
         self.game.update(0.016)
 
-    def test_real_navigation_no_respawn_after_victory(self):
-        """P5 (fix) : la ré-entrée dans le Boss Combat via le flux de
-        navigation réel (exits : Post Combat → Village → Forêt → Boss
-        Combat) ne respawn PAS le monstre déjà vaincu (pas de monstre,
-        pas de bougies), comme la re-sélection directe. (Le bug P5 :
-         « la map doit rester celle du post-combat » / re-entrée par la forêt. )"""
+    def test_real_navigation_redirects_to_post_combat_after_victory(self):
+        """P5/fix : après la mort du monstre, la ré-entrée dans l'aire du
+        boss via le flux de navigation réel (exits : Post Combat → Village
+        → Forêt → aire du boss) bascule vers la carte du **post-combat**
+        (Post Combat) et NON vers la salle de combat (monstre déjà vaincu).
+        De là, le joueur peut interagir avec le trône (siège) pour se
+        transformer en boss, même « après coup ».
+        """
         # Boss Combat : tuer le monstre -> Post Combat.
         self._enter(2)
         self.assertEqual(
@@ -172,15 +174,32 @@ class TestFullQuest(BaseTestCase):
         self.assertEqual(
             self.game.world.current_map_data["name"], "Forêt"
         )
-        # Forêt (bordure droite) -> Boss Combat : pas de respawn (monstre déjà vaincu).
+        # Forêt (bordure droite) : REDIRECTION vers Post Combat (pas Boss
+        # Combat, car le monstre est vaincu).
         self._edge_right()
         self.assertEqual(
-            self.game.world.current_map_data["name"], BOSS_COMBAT_MAP
+            self.game.world.current_map_data["name"], "Post Combat"
         )
+        # Pas de respawn dans l'aire du boss (monstre vaincu) : pas de
+        # monstre, pas de bougies à allumer.
         self.assertIsNone(self.game._monster)
         self.assertTrue(self.game.world.flag_get("monster_defeated"))
         self.assertEqual(self.game._candle_lit_count, 0)
         self.assertEqual(len(self.game._candle_lit), 0)
+
+        # Le joueur peut maintenant interagir avec le trône (siège) pour
+        # se transformer (P4), même après coup.
+        throne = self._objects_by_action("transform_monster")
+        self.assertEqual(len(throne), 1)
+        self._interact_at(throne[0]["box"].centerx, throne[0]["box"].centery)
+        # La transformation (P4) est synchronisée à chaque frame dans
+        # update() (pas seulement au moment de l'interaction) : on lance un
+        # frame pour laisser le sprite/la vitesse passer au boss.
+        self.game.update(0.016)
+        self.assertTrue(self.game.world.flag_get("monster2_active"))
+        self.assertTrue(self.game.player._monster2)
+        self.assertTrue(self.game.player.sprite_path.name == "monster2.png")
+        self.assertEqual(self.game.player.speed, 180.0)
 
 
 class TestSaveLoad(BaseTestCase):
