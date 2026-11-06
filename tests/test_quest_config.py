@@ -184,9 +184,12 @@ class TestQuestConfigFromJson(QuestTestMixin, unittest.TestCase):
         self.assertTrue(c.has_quest)
         self.assertEqual(c.boss_combat_map, "Boss Combat")
         self.assertEqual(c.post_combat_map, "Post Combat")
-        self.assertEqual(c.monster_speed, 55.0)
-        self.assertEqual(c.monster2_speed, 180.0)
-        self.assertEqual(c.candle_total, 5)
+        # Valeurs numériques = celles du JSON (source de vérité, contrat
+        # data-driven) ; pas de valeur durcie.
+        q = self.raw["quest"]
+        self.assertEqual(c.monster_speed, q["monster_speed"])
+        self.assertEqual(c.monster2_speed, q["monster2_speed"])
+        self.assertEqual(c.candle_total, q["candle_total"])
         self.assertEqual(self._rel(c.monster_sprite), "asset/carater/monster.png")
         self.assertEqual(self._rel(c.monster2_sprite), "asset/carater/monster2.png")
         self.assertTrue(c.monster_sprite.is_absolute())

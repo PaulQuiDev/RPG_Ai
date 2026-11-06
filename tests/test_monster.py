@@ -309,16 +309,19 @@ class TestMonsterTransformation(BaseTestCase):
             collisions_enabled=False,
             debug=False,
         )
-        # Drapeau BAISSÉ -> monstre normal (monster.png, MONSTER_SPEED).
+        # Vitesse attendue = celle de la config de la quête (source de
+        # vérité, JSON). Pas de valeur durcie.
+        expected_speed = float(game.quest.monster_speed)
+        # Drapeau BAISSÉ -> monstre normal (monster.png, monster_speed).
         game.world.flag_set("monster2_active", False)
         m1 = game._create_monster(400.0, 400.0)
-        self.assertEqual(m1.speed, 55.0)
+        self.assertEqual(m1.speed, expected_speed)
         self.assertTrue(str(m1.sprite_path).endswith("monster.png"))
         # Drapeau LEVÉ -> le monstre reste normal (P4 : pas de
         # transformation du monstre — la transformation est du JOUEUR).
         game.world.flag_set("monster2_active", True)
         m2 = game._create_monster(400.0, 400.0)
-        self.assertEqual(m2.speed, 55.0)
+        self.assertEqual(m2.speed, expected_speed)
         self.assertTrue(str(m2.sprite_path).endswith("monster.png"))
         self.assertEqual(m2.speed, m1.speed)
 
