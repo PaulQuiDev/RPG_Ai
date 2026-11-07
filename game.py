@@ -612,9 +612,8 @@ class Game:
         )
 
     def _setup_monster(self):
-        """Crée le monstre au spawn de la carte de combat. Sprite et
-        vitesse selon la transformation (monster2.png + rapide si le
-        trône a été interagi, sinon monster.png + lent)."""
+        """Crée le monstre au spawn de la carte de combat (sprite et
+        vitesse déclarés dans la quête)."""
         x, y = self._get_monster_spawn()
         self._monster = self._create_monster(x, y)
 
@@ -781,7 +780,8 @@ class Game:
                     break
             if npc is None:
                 continue
-            # Le « Monstre » du village reste (pas transformé, P4).
+            # Le « Monstre » du village reste (forme du joueur, P4) — jamais en
+            # fuite ; sa forme est gérée par ``sync_npc_presence``.
             if data["name"] == "Monstre":
                 continue
             npc.behavior = "flee"
@@ -794,8 +794,8 @@ class Game:
         )
 
     def sync_npc_presence(self):
-        """Synchronise la présence (fuite non définitive) des PNJ du
-        village avec l'état transformation du joueur (P4).
+        """Synchronise la présence (fuite non définitive) ET la FORME des
+        PNJ du village avec l'état transformation du joueur (P4).
 
         Quand le joueur est en forme boss (``monster2_active`` levé),
         les PNJ du village — hors du « Monstre », qui est la forme du
@@ -835,6 +835,26 @@ class Game:
                     # Retour à la carte : comportement « de base » (celui
                     # du JSON), pas le « flee » imposé pendant la fuite.
                     npc.behavior = npc._base_behavior
+            # FORME du « Monstre » du village : suit monster2_active.
+            # On ne rechange le sprite qu'à la transition (pas chaque
+            # frame) pour éviter de recharger la feuille de sprite.
+            if npc.name == "Monstre":
+                target_monster2 = monster2
+                if target_monster2 != npc._is_monster2:
+                    if target_monster2:
+                        sprite_to_set = self.quest.monster2_sprite
+                    else:
+                        # Retour à sa forme de base (celle déclarée dans
+                        # le JSON de la carte, conservée dans ``_base_sprite``).
+                        sprite_to_set = npc._base_sprite
+                    try:
+                        npc.set_sprite(sprite_to_set)
+                    except RuntimeError as error:
+                        print(
+                            f"Transformation du « Monstre » du village "
+                            f"impossible : {error}"
+                        )
+                    npc._is_monster2 = target_monster2
 
     def _draw_candle_state(self):
         """Affiche une flamme (triangle) au-dessus de chaque bougie allumée

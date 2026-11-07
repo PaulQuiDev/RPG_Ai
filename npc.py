@@ -119,6 +119,13 @@ class Npc:
         # dessiné, non interactif. False = présent. (Fuite non définitive
         # = réversible.)
         self.hidden = False
+        # Sprite « de base » (celui du JSON) : restauré quand le « Monstre
+        # » du village revient de sa forme monster2 (P4, réversible).
+        self._base_sprite = self.sprite_path
+        # Le « Monstre » du village suit la forme du joueur (monster2) :
+        # False = forme de base, True = transformé. Le flag évite de
+        # recharger le sheet à chaque frame.
+        self._is_monster2 = False
         self.speed = float(data.get("speed", NPC_DEFAULT_SPEED))
         self.scale = float(data.get("scale", CHARACTER_SCALE))
         self.collision_radius = float(

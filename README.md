@@ -106,7 +106,7 @@ RPG_Ai/
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
 ├── adventures/        # aventures : <nom>.json (sprites + hyperparamètres + quest)
 │                      #   + <nom>/logic.py (logique qui orchestre les briques)
-├── tests/             # suite pytest (214 tests passants)
+├── tests/             # suite pytest (216 tests passants)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 
@@ -125,7 +125,7 @@ RPG_Ai/
 | P7 | **IA des ennemis** : étendre la patrouille vers une machine à états (patrouille → aggro → attaque → fuite). | ❌ À faire |
 | —  | Clamping du bord (marge sprite). | ✅ RESOLU — les PNJ ne « disparaissent » plus contre le bord : position des pieds clampée à une marge **calculée** à partir de la taille réelle du sprite (facteur de perspective × `scale`) plutôt qu'à 5 px. Solution **globale** — tous les PNJ (statique/patrouille/fuite), toutes les cartes, tous les coins. Tests : `TestNpcEdgeClamp` (bords + 4 coins + patrouille). |
 | —  | Adventures (JSON). | ✅ RESOLU — `adventures/*.json` externalisées + loader + écran de lancement. |
-| —  | Moteur data-driven (JSON + `logic.py`). | ✅ RESOLU — `settings.DEFAULT_ADVENTURE` + loader `load_adventure_logic()` (`adventure.py`), base `Adventure` + 3 logiques (`demo-test`, `forest-quest`, `new`), `Game.__init__` accepte `adventure=`, flux quest (`update`, `_on_map_change`, `_redirect_to_post_combat`) délégué à la logique. Suppression des constantes mortes `FOREST_SEG_*` / `FOREST_BG_*`. Tests : 214 passants. |
+| —  | Moteur data-driven (JSON + `logic.py`). | ✅ RESOLU — `settings.DEFAULT_ADVENTURE` + loader `load_adventure_logic()` (`adventure.py`), base `Adventure` + 3 logiques (`demo-test`, `forest-quest`, `new`), `Game.__init__` accepte `adventure=`, flux quest (`update`, `_on_map_change`, `_redirect_to_post_combat`) délégué à la logique. Suppression des constantes mortes `FOREST_SEG_*` / `FOREST_BG_*`. Tests : 216 passants. |
 | —  | Type checking. | ✅ RESOLU — `Monster` accepte `str \| Path` pour `sprite_path` ; `assert path is not None` (Pyright) — plus d'erreurs rouges VSCode. |
 
 ### Dette technique (choix à réviser)
@@ -196,6 +196,10 @@ RPG_Ai/
 - **`tuner.py` (aperçu)** — l'outil fonctionne, mais dans l'aperçu le sprite recoupé
   rend le personnage quasi invisible jusqu'à l'édition puis la sauvegarde.
   *Observation (GUI), à améliorer si besoin.*
-- **Monstre du village** — après P4, le « Monstre » du village n'est plus transformé
-  (il reste statique, en forme de base). Si le debug montre un comportement bloqué,
-  c'est lié à ce qu'il garde sa forme de base. *À confirmer selon l'aventure.*
+- **Monstre du village** — après P4, le « Monstre » du village suit la
+  transformation du joueur (P4) : il prend la forme `monster2.png` quand le
+  joueur est en forme boss (siège interagi) et revient à sa forme de base
+  (celle du JSON) quand le joueur est redevenu normal. *Résolu — synchronisé
+  par `sync_npc_presence` (appelé à chaque frame dans `update`), réversible et
+  data-driven ; la feuille n'est rechargée qu'à la transition. Test :
+  `test_full_quest.py` (`test_village_monster_follows_player_transformation`).*

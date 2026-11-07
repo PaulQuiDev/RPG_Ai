@@ -208,6 +208,82 @@ class TestFullQuest(BaseTestCase):
             "Le « Monstre » doit rester (toujours présent)",
         )
 
+    def test_village_monster_follows_player_transformation(self):
+        """Le « Monstre » du village suit la transformation du joueur (P4).
+
+        Quand le joueur est en forme boss (``monster2_active`` levé), le
+        « Monstre » du village — la forme du joueur — prend la forme
+        ``monster2`` (``monster2.png``). Quand le joueur est redevenu
+        normal, il revient à sa forme de base (celle déclarée dans le
+        JSON, conservée dans ``_base_sprite``). Réversible et
+        data-driven, synchronisé par ``sync_npc_presence`` (appelé à
+        chaque frame dans ``update``).
+
+        Note : chaque ``change_map`` recharge la carte (nouveaux objets
+        NPC) ; on re-capture donc le « Monstre » *après* chaque transition.
+        """
+        def get_monster():
+            return next(
+                n for n in self.game.game_map.npcs if n.name == "Monstre"
+            )
+
+        # --- 0) Joueur normal : le « Monstre » a sa forme de base.
+        self._enter(0)
+        self.assertEqual(
+            self.game.world.current_map_data["name"], "Village"
+        )
+        self.assertFalse(self.game.world.flag_get("monster2_active"))
+        mon = get_monster()
+        self.assertEqual(
+            mon.sprite_path.name,
+            mon._base_sprite.name,
+            "Forme de base : sprite déclarée dans le JSON",
+        )
+        self.assertFalse(mon._is_monster2)
+        self.assertNotEqual(
+            mon.sprite_path.name,
+            self.game.quest.monster2_sprite.name,
+            "Forme de base distincte de la forme boss",
+        )
+
+        # --- 1) Joueur transformé en boss : le « Monstre » suit la forme
+        #       monster2.
+        self.game.world.flag_set("monster2_active", True)
+        self._enter(0)
+        self.assertTrue(self.game.world.flag_get("monster2_active"))
+        mon = get_monster()
+        self.assertEqual(
+            mon.sprite_path.name,
+            self.game.quest.monster2_sprite.name,
+            "Forme boss : le « Monstre » suit monster2",
+        )
+        self.assertTrue(mon._is_monster2)
+
+        # --- 2) Joueur redevenu normal : le « Monstre » revient à sa forme
+        #       de base.
+        self.game.world.flag_set("monster2_active", False)
+        self._enter(0)
+        self.assertFalse(self.game.world.flag_get("monster2_active"))
+        mon = get_monster()
+        self.assertEqual(
+            mon.sprite_path.name,
+            mon._base_sprite.name,
+            "Forme de base : restaurée depuis le JSON",
+        )
+        self.assertFalse(mon._is_monster2)
+
+        # --- 3) Joueur de nouveau boss : la transformation se re-synchronise.
+        self.game.world.flag_set("monster2_active", True)
+        self._enter(0)
+        self.assertTrue(self.game.world.flag_get("monster2_active"))
+        mon = get_monster()
+        self.assertEqual(
+            mon.sprite_path.name,
+            self.game.quest.monster2_sprite.name,
+            "De nouveau en forme boss",
+        )
+        self.assertTrue(mon._is_monster2)
+
     # -- P5 : navigation RÉELLE (exits), pas sélection directe.
 
     def _edge_left(self):
