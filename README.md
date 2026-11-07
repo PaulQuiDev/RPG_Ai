@@ -13,12 +13,14 @@ l'`.venv/`), lis dans cet ordre :
 1. Ce fichier — vue d'ensemble, structure, points à faire.
 2. `settings.py` — toute la config (cartes, personnages, sprites, constants).
 3. `main.py` — point d'entrée, boucle, options CLI (`--debug`, `--window`, `--fullscreen`).
-4. `world.py` — registre des cartes, chargement, transitions, spawn.
-5. `game_map.py` — fond + masque + couche FG, objets bleus, NPC, rendu.
-6. `player.py` — personnage, mouvement, animation, collision.
-7. `npc.py` — statique / patrouille, interaction.
-8. `behaviors.py` — objets bleus + registre `BEHAVIORS`.
-9. `sprite_loader.py` — découpe 4x3 des sheets.
+4. `game.py` — orchestrateur `Game` : monde, joueur, monstre, drapeaux, transformation (P4),
+   dévoration des PNJ (P8), redirection post-combat (P7), HUD, sauvegarde/chargement.
+5. `world.py` — registre des cartes, chargement, transitions, spawn.
+6. `game_map.py` — fond + masque + couche FG, objets bleus, NPC, rendu.
+7. `player.py` — personnage, mouvement, animation, collision, croissance (P8).
+8. `npc.py` — statique / patrouille, interaction.
+9. `behaviors.py` — objets bleus + registre `BEHAVIORS`.
+10. `sprite_loader.py` — découpe 4x3 des sheets.
 
 Lancer : `.venv/bin/python main.py [--debug|--window|--fullscreen]`
 Tests : `.venv/bin/python -m pytest tests/`
@@ -79,7 +81,7 @@ RPG_Ai/
 ├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
 ├── adventures/        # aventures JSON (demo-test.json, forest-quest.json)
-├── tests/             # suite pytest (205 tests, dont test_quest_config.py)
+├── tests/             # suite pytest (214 tests : 213 passants + 1 sauté — test GUI du tuner, en headless)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 
@@ -137,5 +139,29 @@ RPG_Ai/
 
 ### Notes — ne pas oublier (optionnel / à discuter)
 - **Contrat data-driven (`test_quest_config.py`)** — le cœur du jeu (`game.py`, `monster.py`, `npc.py`, `player.py`, `world.py`, `behaviors.py`) ne doit plus référencer d'asset d'aventure en dur. Le test `test_core_modules_have_no_orphan_hardcoded_assets` scanne ces 6 modules : **ajouter tout nouveau module de logique** à `CORE_MODULES` dans `TestNoHardcodedAdvantageAssets` s'il manipule des assets.
-- **Constantes historiques de `game.py`** — `BOSS_COMBAT_MAP`, `POST_COMBAT_MAP`, `MONSTER_START`, `MONSTER_SPEED`, `MONSTER_SPEED2` sont conservées pour compatibilité mais ne servent plus qu'à l'export (alimentées par `QUEST_CONFIG`). Évaluer leur suppression.
+- **Constantes historiques de `game.py`** (nettoyées) — supprimées `POST_COMBAT_MAP`,
+  `MONSTER_SPEED`, `MONSTER_SPEED2` (non utilisées : le code lit directement
+  `self.quest.post_combat_map` / `monster_speed` / `monster2_speed`). Conservées
+  `BOSS_COMBAT_MAP` et `MONSTER_START` : elles sont **utilisées par les tests**
+  (assertions de nom de carte et de spawn).
 - **Test de bout en bout (optionnel)** — vérifier que le sprite réellement *dessiné* (pygame) par le monstre transformé correspond à `monster2_sprite` du JSON.
+
+
+### Bugs résolus (historique) & observations
+
+- **Clamping au bord** — un PNJ/joueur trop gros pouvait être coincé contre le bord
+  d'une carte et ne plus en sortir (sortie + collisions). ✅ RESOLU — marge calculée
+  depuis la taille réelle du sprite (× facteur de perspective), pas 5 px. Tests :
+  `TestNpcEdgeClamp` (bords + 4 coins + patrouille). *À surveiller avec la croissance
+  du joueur-boss (P8) quand il devient très gros.*
+- **Monstre coincé dans une bougie** — au debug, le sprite du monstre « marche » au
+ -dessus d'une bougie pendant que A* cherche un chemin hors du masque et qu'il reste
+  bloqué. ✅ RESOLU — détection sur le **déplacement réel** (pas de mouvement pendant
+  `STUCK_THRESHOLD` = 1,5 s) + débloquage (`_back_up` / `_unstick`) puis recompute du
+  chemin A*. Tests : `TestMonsterRecovery` (5 tests).
+- **`tuner.py` (aperçu)** — l'outil fonctionne, mais dans l'aperçu le sprite recoupé
+  rend le personnage quasi invisible jusqu'à l'édition puis la sauvegarde.
+  *Observation (GUI), à améliorer si besoin.*
+- **Monstre du village** — après P4, le « Monstre » du village n'est plus transformé
+  (il reste statique, en forme de base). Si le debug montre un comportement bloqué,
+  c'est lié à ce qu'il garde sa forme de base. *À confirmer selon l'aventure.*

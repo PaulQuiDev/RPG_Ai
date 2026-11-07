@@ -21,17 +21,13 @@ from monster import Monster
 
 # --- Quête du monstre (Boss Combat) ------------------------------------------
 # Tout vient de la configuration data-driven de la quête (bloc ``quest``
-# de l'aventure, voir ``quest_config``). Ces constantes module restent
-# exportées pour compatibilité (tests, `main`). Pour une aventure chargée
-# via ``--adv``, le ``Game`` utilise la ``quest`` qui lui est passée.
+# de l'aventure, voir ``quest_config``). Le ``Game`` utilise directement
+# ``self.quest.boss_combat_map`` / ``self.quest.post_combat_map`` / ...
+# Les deux constantes ci-dessous restent exportées uniquement pour la
+# compatibilité avec les tests (assertions de nom de carte et de spawn).
 BOSS_COMBAT_MAP = QUEST_CONFIG.boss_combat_map
-POST_COMBAT_MAP = QUEST_CONFIG.post_combat_map
 # Point de départ du monstre (monster.png) dans la pièce de combat.
 MONSTER_START = QUEST_CONFIG.monster_spawn
-# Vitesse du monstre (px/s) — lente, pour laisser le joueur allumer les bougies.
-MONSTER_SPEED = QUEST_CONFIG.monster_speed
-# Vitesse du monstre transformé (monster2.png) — plus rapide.
-MONSTER_SPEED2 = QUEST_CONFIG.monster2_speed
 
 
 class GameState:
