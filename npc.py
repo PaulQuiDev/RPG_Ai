@@ -112,6 +112,13 @@ class Npc:
         self.name = str(data["name"])
         self.sprite_path = data["sprite"]
         self.behavior = behavior
+        # Comportement « de base » (celui du JSON) : restauré quand le PNJ
+        # sort de la fuite (retour à la carte).
+        self._base_behavior = behavior
+        # True = le PNJ est « sorti » de la carte (fuite) : inactif, non
+        # dessiné, non interactif. False = présent. (Fuite non définitive
+        # = réversible.)
+        self.hidden = False
         self.speed = float(data.get("speed", NPC_DEFAULT_SPEED))
         self.scale = float(data.get("scale", CHARACTER_SCALE))
         self.collision_radius = float(
@@ -162,6 +169,11 @@ class Npc:
 
     def update(self, dt: float, game_map, player):
         """Met à jour le comportement et le cooldown d'interaction."""
+        # Un PNJ « sorti » de la carte (fuite) est inactif : pas de
+        # mouvement, pas d'interaction, pas de clamping (position
+        # conservée pour un retour propre).
+        if self.hidden:
+            return
         self.last_player = player
         self.interact_cooldown = max(0.0, self.interact_cooldown - dt)
         # **Clamping global** : quel que soit le comportement (static,

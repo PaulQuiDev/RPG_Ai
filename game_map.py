@@ -444,7 +444,7 @@ class GameMap:
         """
         # Collisions avec les personnages de la carte (NPC).
         for npc in self.npcs:
-            if npc is ignore or not npc.collide:
+            if npc is ignore or not npc.collide or npc.hidden:
                 continue
             if math.hypot(
                 x - npc.x,
@@ -532,15 +532,26 @@ class GameMap:
         )
 
     def update_npcs(self, dt, player):
-        """Met à jour le comportement de tous les NPC (patrouille)."""
+        """Met à jour le comportement de tous les NPC (patrouille).
+
+        Les PNJ en fuite (``hidden``) sont inactifs : « sortis » de la
+        carte, donc on ne les met pas à jour.
+        """
         for npc in self.npcs:
+            if npc.hidden:
+                continue
             npc.update(dt, self, player)
 
     def npcs_in_contact(self, player):
-        """Retourne la liste des NPC au contact du joueur (portée)."""
+        """Retourne la liste des NPC non-fuiants au contact du joueur.
+
+        Un PNJ en fuite (``hidden``) est « sorti » de la carte : il ne
+        compte ni au contact ni à la collision.
+        """
         if player is None:
             return []
-        return [n for n in self.npcs if n.in_contact(player)]
+        return [n for n in self.npcs
+                if not n.hidden and n.in_contact(player)]
 
     def _draw_npcs(self, screen, player, front):
         """Rend les NPC avec le bon découpage devant/derrière le joueur.
@@ -559,6 +570,8 @@ class GameMap:
 
         to_draw = []
         for npc in self.npcs:
+            if npc.hidden:
+                continue
             if not front:
                 if npc.y <= threshold:
                     to_draw.append(npc)

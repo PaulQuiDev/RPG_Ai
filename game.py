@@ -293,6 +293,11 @@ class Game:
         # l'aventure les séquence ici, sans ajouter de fonctionnalité.
         self.adventure.on_tick(self, dt)
 
+        # Présence des PNJ du village : fuite non définitive (masqués
+        # quand le joueur est boss, remontés quand il est redevenu
+        # normal). Source de vérité ``hidden`` sur les NPC.
+        self.sync_npc_presence()
+
         # Interaction des NPC au contact : message + comportement custom.
         for npc in self.game_map.npcs_in_contact(self.player):
             if npc.can_interact():
@@ -787,6 +792,49 @@ class Game:
         print(
             "Tu es le boss ! Les PNJ du village fuient."
         )
+
+    def sync_npc_presence(self):
+        """Synchronise la présence (fuite non définitive) des PNJ du
+        village avec l'état transformation du joueur (P4).
+
+        Quand le joueur est en forme boss (``monster2_active`` levé),
+        les PNJ du village — hors du « Monstre », qui est la forme du
+        joueur (P4) et reste toujours — « fuient » la carte du village :
+        ``hidden`` (invisibles, inactifs, non interactifs, pas de
+        collision). Quand le joueur est redevenu normal
+        (``monster2_active`` désactivé), ils reviennent
+        (``hidden`` remis à ``False``) et reprennent leur comportement
+        « de base » (celui du JSON, conservé dans ``_base_behavior``).
+
+        Réversible, dérivé de l'état : appelé à chaque tick, aucun effet
+        permanent. ``_apply_village_npc_flee`` (et son drapeau
+        ``_npc_flee_applied`` + ``behavior = "flee"``) est conservé pour
+        la compatibilité avec ``test_full_quest.py`` (assertion sur
+        ``behavior``) ; ``sync_npc_presence`` est la source de vérité
+        pour la présence (``hidden``).
+
+        Ne fait rien hors du village : la fuite est propre à la carte
+        ``Village`` (critère identique à celui de l'aventure /
+        ``_apply_village_npc_flee``).
+        """
+        # Le village est identifié par son nom de carte (même critère que
+        # l'aventure / ``_apply_village_npc_flee`` : carte ``Village``).
+        if self.world.current_map_data.get("name") != "Village":
+            return
+        monster2 = bool(self.world.flag_get("monster2_active"))
+        for npc in self.game_map.npcs:
+            # Le « Monstre » du village est la forme du joueur (P4) :
+            # il n'est jamais « en fuite », toujours présent.
+            if npc.name == "Monstre":
+                target_hidden = False
+            else:
+                target_hidden = monster2
+            if npc.hidden != target_hidden:
+                npc.hidden = target_hidden
+                if not target_hidden:
+                    # Retour à la carte : comportement « de base » (celui
+                    # du JSON), pas le « flee » imposé pendant la fuite.
+                    npc.behavior = npc._base_behavior
 
     def _draw_candle_state(self):
         """Affiche une flamme (triangle) au-dessus de chaque bougie allumée
