@@ -2,8 +2,11 @@
 création de `Game`, boucle (clock → événements → update → render). Toute la
 logique de jeu vit dans `game.Game`.
 
-Les données d'aventure (personnages + cartes) sont chargées depuis les
-fichiers JSON du répertoire ``adventures/`` (voir ``settings.load_adventure``).
+Le moteur est *data-driven* : chaque aventure = un JSON
+(``adventures/<nom>.json`` : sprites/assets + hyperparamètres + quête)
+**et** un fichier ``adventures/<nom>/logic.py`` (classe ``Adventure``) qui
+orchestre les *briques* du moteur (monstre, bougies, transformation,
+dévoration, fuite, redirection) sans en développer de nouvelle.
 
 Options :
   --debug       affiche la carte de collision, les boîtes d'interaction
@@ -37,6 +40,7 @@ from settings import (
     WINDOW_WIDTH,
 )
 from game import Game
+from adventure import load_adventure_logic
 
 _WINDOW_RE = re.compile(r"^\s*(\d+)\s*[xXx×]\s*(\d+)\s*$")
 
@@ -228,8 +232,13 @@ def main():
         config_path = Path(config_path)
 
     # --- Chargement de l'aventure (avec affichage d'erreur visible) ---
+    # L'aventure = JSON (personnages/cartes) + logique
+    # (``adventures/<nom>/logic.py``, orchestration des briques).
     try:
         characters, maps, meta = load_adventure(config_path)
+        # Nom de l'aventure = stem du JSON ; la logique est dans
+        # ``adventures/<stem>/logic.py``.
+        adventure = load_adventure_logic(config_path.stem)
     except Exception as error:
         console_msg = (
             f"Erreur : impossible de charger l'aventure "
@@ -278,9 +287,9 @@ def main():
     # hors-écran ; main.py blitte (smoothscale + letterbox) cette surface
     # dans la fenêtre. Toute la logique de jeu (coordonnées, HUD, sprites,
     # collisions) reste en 960x720 : changer la fenêtre ne casse rien.
-    # La configuration de la quête (bloc ``quest`` de l'aventure) est passée
-    # explicitement au ``Game`` : c'est elle qui pilote le monstre, les
-    # bougies et la transformation, pas des valeurs codées en dur.
+    # La configuration de la quête (bloc ``quest`` de l'aventure) et la
+    # logique (fichier ``logic.py``) sont passées explicitement au ``Game`` :
+    # le moteur expose les briques, l'aventure orchestre la quête.
     quest = meta.get("quest")
 
     game_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -294,6 +303,7 @@ def main():
             debug=args.debug,
             save_path=args.save,
             quest=quest,
+            adventure=adventure,
         )
     except Exception as error:
         console_msg = (

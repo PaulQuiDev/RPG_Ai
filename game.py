@@ -13,8 +13,9 @@ from datetime import datetime
 import pygame
 from pathlib import Path
 
-from settings import BASE_DIR, COLLISIONS_ENABLED_DEFAULT, QUEST_CONFIG
+from settings import BASE_DIR, COLLISIONS_ENABLED_DEFAULT, QUEST_CONFIG, DEFAULT_ADVENTURE
 from behaviors import BEHAVIORS, go_to_map
+from adventure import load_adventure_logic
 from player import Player
 from world import World
 from monster import Monster
@@ -53,6 +54,7 @@ class Game:
         debug=False,
         save_path=None,
         quest=None,
+        adventure=None,
     ):
         """
         Args:
@@ -106,6 +108,18 @@ class Game:
         # (bloc ``quest``). Par défaut : l'aventure par défaut ;
         # ``main.py`` (``--adv``) passe celle de l'aventure chargée.
         self.quest = quest if quest is not None else QUEST_CONFIG
+
+        # --- Logique d'aventure (data-driven) ----------------------------------
+        # L'aventure (fichier ``adventures/<name>/logic.py``) fournit
+        # l'ORCHESTRATION de la quête ; le moteur (cette classe + modules
+        # ``world`` / ``game_map`` / ``player`` / ``monster`` / ``npc`` /
+        # ``behaviors`` / ``quest_config``) fournit les *BRIQUES*. Par défaut :
+        # la logique de ``settings.DEFAULT_ADVENTURE``. Le code Python d'une
+        # aventure ne doit PAS développer de nouvelle fonctionnalité : il
+        # orchestre uniquement les briques du moteur.
+        if adventure is None:
+            adventure = load_adventure_logic(DEFAULT_ADVENTURE)
+        self.adventure = adventure
 
         # Conditions globales (quêtes) : drapeaux -> conditions.
         self.world.register_condition(
@@ -273,47 +287,11 @@ class Game:
         self.world.check_transition(self.player)
         self.game_map = self.world.game_map
 
-        # Quête du monstre : si combat en cours et monstre vivant.
-        if (
-            self._monster is not None
-            and self.world.current_map_data.get("name")
-            == self.quest.boss_combat_map
-        ):
-            if self._monster.move_towards(
-                self.player.x,
-                self.player.y,
-                dt,
-                self.game_map,
-                self.player,
-            ):
-                self._reset_combat()
-
-        # Transformation du JOUEUR (P4) : dérivée du drapeau
-        # monster2_active (levé par le trône). Synchronise le joueur
-        # à chaque frame (idempotent ; couvre le chargement et tout
-        # changement de drapeau).
-        if self.world.flag_get("monster2_active"):
-            self._apply_player_monster2()
-        else:
-            self._reset_player_monster2()
-
-        # --- Dévoration des PNJ (boss) : au contact, si transformé ---
-        # Le joueur-boss « mange » les PNJ qu'il touche : ils disparaissent
-        # (retirés de la carte et de la donnée persistante, donc ils ne
-        # reparaîtront pas) et le joueur grossit (taille + hitbox +
-        # vitesse). L'effet est cumulatif : un pas par PNJ dévoré.
-        if self.world.flag_get("monster2_active"):
-            for npc in self.game_map.npcs_in_contact(self.player):
-                self._eat_npc(npc)
-
-        # PNJ du village : ils fuient le joueur-boss (flag levé) — effet
-        # un seul passage par carte (comme à l'origine).
-        if (
-            self.world.current_map_data.get("name") == "Village"
-            and not self._npc_flee_applied
-            and self.world.flag_get("monster2_active")
-        ):
-            self._apply_village_npc_flee()
+        # --- Quête (data-driven) : orchestration fournie par l'aventure ---
+        # Fichier ``adventures/<name>/logic.py``. Le moteur expose des
+        # briques (monstre, bougies, transformation, dévoration, fuite) ;
+        # l'aventure les séquence ici, sans ajouter de fonctionnalité.
+        self.adventure.on_tick(self, dt)
 
         # Interaction des NPC au contact : message + comportement custom.
         for npc in self.game_map.npcs_in_contact(self.player):
@@ -593,21 +571,19 @@ class Game:
 
     def _on_map_change(self):
         """Appelé à chaque changement de carte (détection dans update).
-        Réinitialise l'état dépendant de la carte (monstre, bougies,
-        transformation) et crée le monstre sur la carte de combat."""
+
+        La logique (réinitialisation de l'état de quête, setup du monstre,
+        etc.) est fournie par l'aventure (fichier ``logic.py``) via
+        ``on_map_change`` ; le moteur n'expose que la mécanique (détecter,
+        logguer, mettre à jour ``_prev_map_name``).
+        """
         prev = getattr(self, "_prev_map_name", None)
         curr = self.world.current_map_data.get("name")
         if curr != prev:
             self._prev_map_name = curr
             self._log_action("map_change", name=curr)
-            self._monster = None
-            self._candle_lit = set()
-            self._candle_lit_count = 0
-            self._npc_flee_applied = False
-            if curr == self.quest.boss_combat_map and not self.world.flag_get(
-                "monster_defeated"
-            ):
-                self._setup_monster()
+            # --- Quête (data-driven) : orchestration fournie par l'aventure ---
+            self.adventure.on_map_change(self, prev, curr)
 
     def _get_monster_spawn(self):
         """Retourne une position walkable proche du spawn du monstre
@@ -712,29 +688,14 @@ class Game:
         print("Monstre vaincu ! Passage à la carte de fin de combat.")
 
     def _redirect_to_post_combat(self, destination_name, player):
-        """Redirection de destination (quêtes) : après la mort du monstre,
-        une sortie vers la carte de combat bascule vers la carte de fin de
-        combat (``Post Combat``).
+        """Hook de redirection post-combat (mécanisme P7).
 
-        Renvoie ``None`` (pas de redirection) sauf si :
-          - le monstre est vaincu (flag ``monster_defeated``), ET
-          - la destination est la carte de combat (``boss_combat_map``), ET
-          - la carte de fin de combat existe dans l'aventure.
-
-        C'est ce qui permet, après le combat, de revenir vers l'aire du boss
-        (via la forêt) et de se retrouver sur la carte du trône (Post
-        Combat), d'où on peut interagir avec le trône pour se transformer
-        (P4), même après coup.
+        La logique est fournie par l'aventure (fichier ``logic.py``) via
+        ``redirect_dest`` : après la victoire sur le monstre, une transition
+        depuis ``boss_combat_map`` vers ``post_combat_map`` (si elle existe).
+        Le moteur expose la mécanique ; l'aventure décide la destination.
         """
-        if not self.world.flag_get("monster_defeated"):
-            return None
-        if destination_name != self.quest.boss_combat_map:
-            return None
-        post_name = self.quest.post_combat_map
-        for md in self.world.maps:
-            if md.get("name") == post_name:
-                return post_name
-        return None
+        return self.adventure.redirect_dest(self, destination_name, player)
 
     def _apply_player_monster2(self):
         """Si le drapeau monster2_active est levé, transforme le JOUEUR

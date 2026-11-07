@@ -11,16 +11,25 @@ Pour travailler sur ce code **sans charger tout le repo** (éviter les PNG et
 l'`.venv/`), lis dans cet ordre :
 
 1. Ce fichier — vue d'ensemble, structure, points à faire.
-2. `settings.py` — toute la config (cartes, personnages, sprites, constants).
-3. `main.py` — point d'entrée, boucle, options CLI (`--debug`, `--window`, `--fullscreen`).
-4. `game.py` — orchestrateur `Game` : monde, joueur, monstre, drapeaux, transformation (P4),
-   dévoration des PNJ (P8), redirection post-combat (P7), HUD, sauvegarde/chargement.
-5. `world.py` — registre des cartes, chargement, transitions, spawn.
-6. `game_map.py` — fond + masque + couche FG, objets bleus, NPC, rendu.
-7. `player.py` — personnage, mouvement, animation, collision, croissance (P8).
-8. `npc.py` — statique / patrouille, interaction.
-9. `behaviors.py` — objets bleus + registre `BEHAVIORS`.
-10. `sprite_loader.py` — découpe 4x3 des sheets.
+2. `settings.py` — config (cartes, personnages, sprites) + loader
+   `load_adventure()` + `DEFAULT_ADVENTURE`.
+3. `adventure.py` — moteur data-driven : base `Adventure` + loader
+   `load_adventure_logic()` + API des briques (monstre, bougies,
+   transformation, dévoration, fuite, redirection).
+4. `adventures/<nom>/logic.py` — logique par aventure : classe `Adventure`
+   qui orchestre les briques (dépend du JSON, **ne développe aucune
+   fonctionnalité** du moteur).
+5. `main.py` — point d'entrée, boucle, options CLI (`--debug`, `--window`,
+   `--fullscreen`).
+6. `game.py` — orchestrateur `Game` : monde, joueur, monstre, drapeaux,
+   HUD, sauvegarde/chargement ; **expose les briques**, délègue
+   l'orchestration de la quête à `self.adventure`.
+7. `world.py` — registre des cartes, chargement, transitions, spawn.
+8. `game_map.py` — fond + masque + couche FG, objets bleus, NPC, rendu.
+9. `player.py` — personnage, mouvement, animation, collision, croissance (P8).
+10. `npc.py` — statique / patrouille, interaction.
+11. `behaviors.py` — objets bleus + registre `BEHAVIORS`.
+12. `sprite_loader.py` — découpe 4x3 des sheets.
 
 Lancer : `.venv/bin/python main.py [--debug|--window|--fullscreen]`
 Tests : `.venv/bin/python -m pytest tests/`
@@ -44,8 +53,10 @@ cd ~/Bureau/RPG_Ai
 
 | Fichier             | Rôle                                                                 |
 |---------------------|----------------------------------------------------------------------|
-| `main.py`           | boucle de jeu : input → update → interactions → rendu + HUD          |
-| `game.py`           | orchestrateur « Game » : monde, joueur, monstre, drapeaux, HUD, sauvegarde/chargement |
+| `main.py`           | boucle de jeu : input → update → rendu + HUD, chargement de la **logique d'aventure** |
+| `game.py`           | orchestrateur « Game » : monde, joueur, monstre, drapeaux, HUD, sauvegarde/chargement ; **briques** exposées, quest déléguée à `self.adventure` |
+| `adventure.py`      | moteur data-driven : base `Adventure` + `load_adventure_logic()` + API des briques |
+| `adventures/<nom>/logic.py` | logique par aventure (classe `Adventure`), orchestre les briques |
 | `world.py`          | registre des cartes, chargement, transitions (sorties), choix du spawn |
 | `game_map.py`       | fond + masque de collision + couche FG, objets bleus, NPC, perspective |
 | `monster.py`        | monstre hostile : A* pathfinding + anti-blocage                      |
@@ -60,28 +71,42 @@ Flux par frame : `player.update` → `game_map.update_npcs` → transitions (bor
 détection des objets bleus au contact (action `BEHAVIORS`) + NPC au contact
 (message/action) → `game_map.draw` (fond, masques, FG, objets, NPC, joueur).
 
+L'orchestration de la quête (monstre, bougies, transformation, dévoration,
+fuite, redirection) est **data-driven** : la logique d'aventure
+(`adventures/<nom>/logic.py`, classe `Adventure`) orchestre les briques du
+moteur — via `Game.update` → `adventure.on_tick(self, dt)`, et via
+`Game._on_map_change` → `adventure.on_map_change(...)` /
+`Game._redirect_to_post_combat` → `adventure.redirect_dest(...)` — sans
+développer aucune fonctionnalité. Les **briques** (`_setup_monster`,
+`_light_candle`, `_reset_combat`, `_apply_player_monster2`, `_eat_npc`,
+`_apply_village_npc_flee`, `move_towards`, ...) vivent dans `game.py`.
+
 ## Structure
 
 ```
 RPG_Ai/
 ├── main.py            # boucle de jeu, input → update → interactions → rendu
 ├── game.py            # orchestrateur « Game » : monde, joueur, monstre,
-│                      #   drapeaux, HUD, sauvegarde/chargement
+│                      #   drapeaux, HUD, sauvegarde/chargement ; briques +
+│                      #   délégation de la quest à self.adventure
+├── adventure.py       # moteur data-driven : base Adventure + loader
+│                      #   load_adventure_logic() + API des briques
 ├── world.py           # registre des cartes, chargement, transitions, spawn
 ├── game_map.py        # fond + masque + couche FG, objets bleus, NPC, perspective
 ├── monster.py         # monstre hostile : A* pathfinding + transformation
 ├── player.py          # personnage : mouvement, animation, collision
 ├── npc.py             # personnages de carte : statique / patrouille
 ├── behaviors.py       # comportements des objets bleus + registre BEHAVIORS
-├── settings.py        # toute la config (cartes, personnages, sprites, constants)
+├── settings.py        # config + load_adventure() + DEFAULT_ADVENTURE
 ├── sprite_loader.py   # découpe 4x3 des sheets
 ├── tuner.py           # GUI tkinter : ajuster crops & anchors
 ├── smoke_npc.py       # test headless
 ├── prompte_actelle.txt # prompts de génération d'assets (IA)
 ├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
-├── adventures/        # aventures JSON (demo-test.json, forest-quest.json)
-├── tests/             # suite pytest (214 tests : 213 passants + 1 sauté — test GUI du tuner, en headless)
+├── adventures/        # aventures : <nom>.json (sprites + hyperparamètres + quest)
+│                      #   + <nom>/logic.py (logique qui orchestre les briques)
+├── tests/             # suite pytest (214 tests passants)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 
@@ -100,6 +125,7 @@ RPG_Ai/
 | P7 | **IA des ennemis** : étendre la patrouille vers une machine à états (patrouille → aggro → attaque → fuite). | ❌ À faire |
 | —  | Clamping du bord (marge sprite). | ✅ RESOLU — les PNJ ne « disparaissent » plus contre le bord : position des pieds clampée à une marge **calculée** à partir de la taille réelle du sprite (facteur de perspective × `scale`) plutôt qu'à 5 px. Solution **globale** — tous les PNJ (statique/patrouille/fuite), toutes les cartes, tous les coins. Tests : `TestNpcEdgeClamp` (bords + 4 coins + patrouille). |
 | —  | Adventures (JSON). | ✅ RESOLU — `adventures/*.json` externalisées + loader + écran de lancement. |
+| —  | Moteur data-driven (JSON + `logic.py`). | ✅ RESOLU — `settings.DEFAULT_ADVENTURE` + loader `load_adventure_logic()` (`adventure.py`), base `Adventure` + 3 logiques (`demo-test`, `forest-quest`, `new`), `Game.__init__` accepte `adventure=`, flux quest (`update`, `_on_map_change`, `_redirect_to_post_combat`) délégué à la logique. Suppression des constantes mortes `FOREST_SEG_*` / `FOREST_BG_*`. Tests : 214 passants. |
 | —  | Type checking. | ✅ RESOLU — `Monster` accepte `str \| Path` pour `sprite_path` ; `assert path is not None` (Pyright) — plus d'erreurs rouges VSCode. |
 
 ### Dette technique (choix à réviser)
@@ -138,7 +164,15 @@ RPG_Ai/
 1. **P7** — IA des ennemis (machine à états : patrouille → aggro → attaque → fuite).
 
 ### Notes — ne pas oublier (optionnel / à discuter)
-- **Contrat data-driven (`test_quest_config.py`)** — le cœur du jeu (`game.py`, `monster.py`, `npc.py`, `player.py`, `world.py`, `behaviors.py`) ne doit plus référencer d'asset d'aventure en dur. Le test `test_core_modules_have_no_orphan_hardcoded_assets` scanne ces 6 modules : **ajouter tout nouveau module de logique** à `CORE_MODULES` dans `TestNoHardcodedAdvantageAssets` s'il manipule des assets.
+- **Contrat data-driven** — le cœur du jeu (`game.py`, `monster.py`, `npc.py`,
+  `player.py`, `world.py`, `behaviors.py`) ne doit **pas** référencer d'asset
+  d'aventure en dur : la quête (monstre, bougies, transformation, dévoration,
+  fuite, redirection) est **data-driven** — les valeurs viennent du bloc
+  `quest` du JSON (`load_quest` → `QuestConfig`), la **logique** d'aventure
+  (`adventures/<nom>/logic.py`) orchestre les briques sans en développer
+  aucune. Le test `test_core_modules_have_no_orphan_hardcoded_assets` scanne
+  ces modules : **ajouter tout nouveau module de logique** à `CORE_MODULES`
+  dans `TestNoHardcodedAdvantageAssets` s'il manipule des assets.
 - **Constantes historiques de `game.py`** (nettoyées) — supprimées `POST_COMBAT_MAP`,
   `MONSTER_SPEED`, `MONSTER_SPEED2` (non utilisées : le code lit directement
   `self.quest.post_combat_map` / `monster_speed` / `monster2_speed`). Conservées

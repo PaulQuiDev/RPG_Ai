@@ -8,15 +8,9 @@ BASE_DIR = Path(__file__).resolve().parent
 ADVENTURES_DIR = BASE_DIR / "adventures"
 
 
-# Masques SEG de la Forêt (défaut + alternée) et images de fond
-# (défaut + alternée).
-# L'image de fond alternée (fro2.png) est un miroir horizontal de fro1.png,
-# générée à des fins de test du changement d'image — à remplacer par une
-# vraie image quand celle-ci existera.
-FOREST_SEG_DEFAULT = BASE_DIR / "asset/world/fro1SEG.png"
-FOREST_SEG_ALT = BASE_DIR / "asset/world/fro2SEG.png"
-FOREST_BG_DEFAULT = BASE_DIR / "asset/world/fro1.png"
-FOREST_BG_ALT = BASE_DIR / "asset/world/fro2.png"
+# Aventure par défaut : nom du JSON d'aventure (``adventures/<DEFAULT_ADVENTURE>.json``)
+# et de sa logique (``adventures/<DEFAULT_ADVENTURE>/logic.py``).
+DEFAULT_ADVENTURE = "demo-test"
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +144,7 @@ def load_adventure(config_path=None):
 
     Args:
         config_path : chemin vers le fichier JSON (str ou Path). Si ``None``,
-            charge l'aventure par défaut (``ADVENTURES_DIR / "demo-test.json"``).
+            charge l'aventure par défaut (``settings.DEFAULT_ADVENTURE``).
 
     Returns:
         Tuple ``(characters, maps, meta)`` ::
@@ -167,7 +161,7 @@ def load_adventure(config_path=None):
         json.JSONDecodeError: si le fichier JSON est mal formé.
     """
     if config_path is None:
-        config_path = str(ADVENTURES_DIR / "demo-test.json")
+        config_path = str(ADVENTURES_DIR / (DEFAULT_ADVENTURE + ".json"))
     config_path = Path(config_path)
     if not config_path.exists():
         raise FileNotFoundError(f"Aventure introuvable : {config_path}")
