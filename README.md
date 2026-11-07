@@ -30,6 +30,10 @@ l'`.venv/`), lis dans cet ordre :
 10. `npc.py` — statique / patrouille, interaction.
 11. `behaviors.py` — objets bleus + registre `BEHAVIORS`.
 12. `sprite_loader.py` — découpe 4x3 des sheets.
+13. `map_editor.py` — **outil** (GUI pygame, headless-safe) pour *créer/éditer*
+    les aventures : superposer image + masque (transparence), peindre/remplir
+    la segmentation, définir les objets interactifs (nom/action) et écrire
+    le JSON d'aventure + le masque (backup). N'est pas chargé par le moteur.
 
 Lancer : `.venv/bin/python main.py [--debug|--window|--fullscreen]`
 Tests : `.venv/bin/python -m pytest tests/`
@@ -47,6 +51,8 @@ cd ~/Bureau/RPG_Ai
 .venv/bin/python main.py --save PATH      # chemin du fichier de sauvegarde (clé S)
 .venv/bin/python main.py --load PATH      # reprise de partie : charge PATH au démarrage
 .venv/bin/python smoke_npc.py             # test headless (7 vérifs, sans fenêtre)
+.venv/bin/python map_editor.py [chemin/vers/aventure.json]  # éditeur de carte (GUI)
+.venv/bin/python map_editor.py --headless --frames 3         # smoke test GUI (headless)
 ```
 
 ## Comment ça marche (en bref)
@@ -64,6 +70,7 @@ cd ~/Bureau/RPG_Ai
 | `npc.py`            | personnages de carte : statique / patrouille, collision, interaction  |
 | `sprite_loader.py`  | découpe 4x3 des sheets, partagée par le joueur et les NPC            |
 | `tuner.py`          | GUI tkinter : ajuster crops & anchors → `asset/sprite_configs.json`    |
+| `map_editor.py`     | **outil** GUI pygame (headless-safe) : superposer map + masque (transparence), peindre/remplir la segmentation, CRUD objets (nom/action) → sauvegarde JSON + backup masque |
 | `behaviors.py`      | comportements des objets bleus + registre `BEHAVIORS`                |
 | `settings.py`       | toute la config (cartes, personnages, sprites, constants)            |
 
@@ -80,6 +87,14 @@ moteur — via `Game.update` → `adventure.on_tick(self, dt)`, et via
 développer aucune fonctionnalité. Les **briques** (`_setup_monster`,
 `_light_candle`, `_reset_combat`, `_apply_player_monster2`, `_eat_npc`,
 `_apply_village_npc_flee`, `move_towards`, ...) vivent dans `game.py`.
+
+**Flux de production (data-driven)** —
+`map_editor.py` (GUI, headless-safe) *écrit* les données →
+`adventures/<nom>.json` (objets / noms / actions / quest) +
+`asset/world/<nom>SEG.png` (segmentation, avec `_backup.png`) →
+`settings.load_adventure()` les charge (résolution des chemins, overrides de
+sprites) → `Game` les consomme (monde, joueur, HUD, quest). Toute la logique
+runtime reste dans le moteur ; l'aventure n'apporte que des **données**.
 
 ## Structure
 
@@ -100,13 +115,15 @@ RPG_Ai/
 ├── settings.py        # config + load_adventure() + DEFAULT_ADVENTURE
 ├── sprite_loader.py   # découpe 4x3 des sheets
 ├── tuner.py           # GUI tkinter : ajuster crops & anchors
+├── map_editor.py      # GUI (pygame, headless) : éditer map + segmentation +
+│                      #   objets (nom/action) → écrire le JSON + backup masque
 ├── smoke_npc.py       # test headless
 ├── prompte_actelle.txt # prompts de génération d'assets (IA)
 ├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
 ├── adventures/        # aventures : <nom>.json (sprites + hyperparamètres + quest)
 │                      #   + <nom>/logic.py (logique qui orchestre les briques)
-├── tests/             # suite pytest (216 tests passants)
+├── tests/             # suite pytest (217 tests passants)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 
@@ -125,13 +142,18 @@ RPG_Ai/
 | P7 | **IA des ennemis** : étendre la patrouille vers une machine à états (patrouille → aggro → attaque → fuite). | ❌ À faire |
 | —  | Clamping du bord (marge sprite). | ✅ RESOLU — les PNJ ne « disparaissent » plus contre le bord : position des pieds clampée à une marge **calculée** à partir de la taille réelle du sprite (facteur de perspective × `scale`) plutôt qu'à 5 px. Solution **globale** — tous les PNJ (statique/patrouille/fuite), toutes les cartes, tous les coins. Tests : `TestNpcEdgeClamp` (bords + 4 coins + patrouille). |
 | —  | Adventures (JSON). | ✅ RESOLU — `adventures/*.json` externalisées + loader + écran de lancement. |
-| —  | Moteur data-driven (JSON + `logic.py`). | ✅ RESOLU — `settings.DEFAULT_ADVENTURE` + loader `load_adventure_logic()` (`adventure.py`), base `Adventure` + 3 logiques (`demo-test`, `forest-quest`, `new`), `Game.__init__` accepte `adventure=`, flux quest (`update`, `_on_map_change`, `_redirect_to_post_combat`) délégué à la logique. Suppression des constantes mortes `FOREST_SEG_*` / `FOREST_BG_*`. Tests : 216 passants. |
+| —  | Moteur data-driven (JSON + `logic.py`). | ✅ RESOLU — `settings.DEFAULT_ADVENTURE` + loader `load_adventure_logic()` (`adventure.py`), base `Adventure` + 3 logiques (`demo-test`, `forest-quest`, `new`), `Game.__init__` accepte `adventure=`, flux quest (`update`, `_on_map_change`, `_redirect_to_post_combat`) délégué à la logique. Suppression des constantes mortes `FOREST_SEG_*` / `FOREST_BG_*`. Tests : 217 passants. |
+| —  | Éditeur de mapes (`map_editor.py`). | ✅ RESOLU — GUI pygame (headless-safe) : superposition image + masque (transparence), peindre/remplir la segmentation, CRUD objets (nom/action), sauvegarde dans le JSON d'aventure + backup du masque, undo avec restauration correcte des flags dirty. Tests headless : `test_map_editor.py` + `test_events.py` + runtime `test_runtime_game.py` (Game consomme le JSON). |
+| —  | Physique : marcher sur les objets. | ✅ RESOLU — `WALKABLE_GREEN_THRESHOLD` 90 → 50 (anti-aliasing, `g` min 58) dans `game_map.is_walkable` ; murs/sol intacts (garde `b > 100`). Test : `test_can_walk_on_central_lantern`. |
 | —  | Type checking. | ✅ RESOLU — `Monster` accepte `str \| Path` pour `sprite_path` ; `assert path is not None` (Pyright) — plus d'erreurs rouges VSCode. |
 
 ### Dette technique (choix à réviser)
 - **Collision par seuil de couleur fragile** : le masque praticable se base sur
-  un seuil de couleur (R < 150). Remplacer par une map de collision **données**
-  (tiles) + outil de calibration, pour ne pas casser la collision si l'art change.
+  des seuils de couleur (`b > 100` et `g > 50`, vert abaissé 90 → 50 pour
+  l'anti-aliasing). Remplacer par une map de collision **données** (tiles) +
+  outil de calibration, pour ne pas casser la collision si l'art change.
+  (Moteur déjà basé sur la couleur → dette structurelle, pas un bug. L'éditeur
+  `map_editor.py` permet désormais de peindre/remplir ce masque à la main.)
 - **Pas de gestion centralisée des assets** : centraliser chargement /
   validation / cache dans un manager d'assets.
 - **Pipeline IA pour les assets** : lier la génération Krea2 / Qwen au projet
@@ -152,16 +174,19 @@ RPG_Ai/
 ### Idées imatures — à discuter (pas des priorités)
 - **Dialogue** : l'interaction NPC affiche un simple message ; ajouter des
   arbres de dialogue.
-- **Éditeur de niveau** : changer les couleurs de la segmentation + définir les
-  objets à interagir (nom / comportement pour le JSON), voire afficher la map et
-  la segmentation en transparence.
 - **Debug humain** : comprendre facilement la situation dans la console
   (position joueur + seconde), voire afficher en transparence la map
   d'interaction et les hitboxes. Flag à ajouter au lancement.
 - **Hébergement web** : migrer du GitHub Pages vers un hébergement web.
 
 ### Prochaines étapes
-1. **P7** — IA des ennemis (machine à états : patrouille → aggro → attaque → fuite).
+1. **P7** — IA des ennemis (machine à états : patrouille → aggro → attaque →
+   fuite) — dernier point « ❌ À faire » du moteur.
+2. (structurel) **Collision par tuiles** (dette n°1) — remplacer le seuil de
+   couleur par une couche de tuiles générée depuis le masque ; dernier point
+   structurel, à traiter si l'art change encore.
+   (Les autres dettes — inventaire, IA pipeline, santé — restent en liste
+   « à réviser », pas prioritaires.)
 
 ### Notes — ne pas oublier (optionnel / à discuter)
 - **Contrat data-driven** — le cœur du jeu (`game.py`, `monster.py`, `npc.py`,
