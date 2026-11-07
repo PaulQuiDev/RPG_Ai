@@ -12,6 +12,7 @@ import json
 import unittest
 from pathlib import Path
 
+import math
 import pygame
 
 from settings import CHARACTERS, MAPS
@@ -357,6 +358,92 @@ class TestFullQuest(BaseTestCase):
         self.assertTrue(self.game.player._monster2)
         self.assertTrue(self.game.player.sprite_path.name == "monster2.png")
         self.assertEqual(self.game.player.speed, 180.0)
+
+    # -- P10 : marcher sur les objets interactifs « très bleus et très verts ».
+
+    def test_can_walk_on_central_lantern(self):
+        """P10 : marcher sur une lanterne « très bleue ET très verte »
+        au centre de la MAP village.
+
+        La segmentation du village colorie certains objets interactifs en
+        « très bleu » (b > seuil) ET « très vert » (g > seuil) — ex. :
+        l'objet central segmenté ~(0, 112, 255). La physique doit alors
+        laisser le joueur *marcher* dessus (et interagir), ce qui n'était
+        pas le cas avant (règle « vert-dominant » uniquement).
+
+        On identifie l'objet bleu interactif le plus proche du centre de
+        la carte (la « lanterne du centre ») puis on vérifie :
+          1. son centre est praticable (`is_walkable`),
+          2. le joueur peut réellement s'y placer (`can_stand_at`,
+             le même test que la physique du mouvement) => marcher dessus,
+          3. l'objet reste interactif (a un comportement).
+        + régression : le centre exact (sol, vert-dominant) reste
+          praticable ; un mur (rouge-dominant) n'est PAS praticable.
+        """
+        self._enter(0)
+        self.assertEqual(
+            self.game.world.current_map_data["name"], "Village"
+        )
+        map_ = self.game.game_map
+        self.assertTrue(
+            map_.interact_objects,
+            "La MAP village devrait avoir des objets bleus (lanternes).",
+        )
+        cx, cy = map_.width / 2.0, map_.height / 2.0
+        # Objet bleu interactif le plus proche du centre = la lanterne.
+        nearest = min(
+            map_.interact_objects,
+            key=lambda o: math.hypot(
+                o["box"].centerx - cx,
+                o["box"].centery - cy,
+            ),
+        )
+        lcx, lcy = nearest["box"].centerx, nearest["box"].centery
+
+        # 1) Centre de la lanterne praticable (règle « très bleu + vert »).
+        self.assertTrue(
+            map_.is_walkable(lcx, lcy),
+            f"Le centre de la lanterne ({int(lcx)}, {int(lcy)}) "
+            f"(action={nearest.get('action')!r}) devrait être praticable.",
+        )
+        # 2) Le joueur peut réellement SE PLACER sur la lanterne (marcher
+        #    dessus) : c'est le même test que la physique du mouvement
+        #    (``can_stand_at``), avec le rayon de collision du joueur.
+        self.assertTrue(
+            map_.can_stand_at(
+                lcx, lcy, self.game.player.collision_radius
+            ),
+            "Le joueur devrait pouvoir se placer (marcher) sur la lanterne "
+            f"({int(lcx)}, {int(lcy)}) (action={nearest.get('action')!r}).",
+        )
+        # 3) L'objet reste interactif (on peut interagir).
+        self.assertTrue(
+            nearest.get("action"),
+            f"La lanterne du centre devrait être interactive "
+            f"(action={nearest.get('action')!r}).",
+        )
+        # 4) Régression : le centre exact (sol, vert-dominant) reste
+        #    praticable (la règle n'a pas cassé la marche normale).
+        self.assertTrue(
+            map_.is_walkable(cx, cy),
+            "Le centre (sol, vert-dominant) devrait rester praticable.",
+        )
+        # 5) Régression : un mur (rouge-dominant) n'est PAS praticable.
+        wall = None
+        W, H = map_.width, map_.height
+        for y in (0, 15, 40, H - 40, H - 15, H):
+            for x in (0, 15, 40, W - 40, W - 15, W):
+                r, g, b = map_.collision_mask.get_at((x, y))[:3]
+                if r > 150 and g < 60 and b < 60:
+                    wall = (x, y)
+                    break
+            if wall:
+                break
+        if wall is not None:
+            self.assertFalse(
+                map_.is_walkable(*wall),
+                f"Un mur ({wall}) devrait être NON praticable.",
+            )
 
 
 class TestSaveLoad(BaseTestCase):

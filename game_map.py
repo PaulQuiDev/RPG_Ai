@@ -21,6 +21,19 @@ from settings import (
 )
 
 
+# Objets « marchables » : dans la segmentation, un objet qui est à la
+# fois « très bleu » (b > seuil) et « très vert » (g > seuil) est un
+# objet interactif sur lequel le joueur peut *marcher* (et interagir).
+# Seuils calibrés sur le masque du village : centre de lanterne ~(0,
+# 112, 255), sol ~(82, 193, 17), mur ~(255, 22, 19) -> aucun
+# chevauchement.
+WALKABLE_BLUE_THRESHOLD = 100   # « très bleu » : b > 100 (idempotent à INTERACT_BLUE_THRESHOLD)
+WALKABLE_GREEN_THRESHOLD = 50   # « très vert » : g > 50  (seuil volontairement bas :
+                                # min ~58 sur les lanternes ; l'anti-aliasing des
+                                # bords descend jusqu'à ~58. Les murs (b~19) et
+                                # le sol (b~17) échouent sur b > WALKABLE_BLUE_THRESHOLD)
+
+
 class GameMap:
     def __init__(self, background_path, mask_path,
                  foreground_path=None, perspective=None,
@@ -429,8 +442,18 @@ class GameMap:
 
         color = self.collision_mask.get_at((x, y))
 
-        # Vert = zone praticable
-        return color.g > color.r and color.g > color.b
+        # Vert dominant = zone praticable (sol, herbe, pavés).
+        if color.g > color.r and color.g > color.b:
+            return True
+
+        # Bleu ET vert = objet interactif sur lequel le joueur peut
+        # marcher (ex. : les lanternes du village, segmentées en ~(0,
+        # 112, 255)). « Très bleu » reprend le seuil des objets
+        # interactifs ; « très vert » filtre les objets bleus non verts.
+        return (
+            color.b > WALKABLE_BLUE_THRESHOLD
+            and color.g > WALKABLE_GREEN_THRESHOLD
+        )
 
     def can_stand_at(self, x: float, y: float, radius: float = 5.0,
                      ignore=None) -> bool:
