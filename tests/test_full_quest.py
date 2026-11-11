@@ -129,18 +129,23 @@ class TestFullQuest(BaseTestCase):
         self.assertEqual(len(self.game._candle_lit), 0)
 
     def test_village_npc_flee_is_reversible(self):
-        """Fuite NON DÉFINITIVE des PNJ du village.
+        """Fuite NON DÉFINITIVE des PNJ du village (visible, vers les bords).
 
         Quand le joueur est en forme boss (``monster2_active`` levé), les
         PNJ du village — *hors du « Monstre », qui est la forme du joueur
-        (P4) et qui reste toujours* — « sortent » de la carte (``hidden``
-        : invisibles, inactifs, non interactifs, pas de collision). Quand
-        le joueur est redevenu normal (``monster2_active`` désactivé), ils
-        reviennent et reprennent leur comportement « de base ». Effet
-        réversible, dérivé de l'état (flag) : aucun effet permanent.
+        (P4) et qui reste toujours* — **fuyent** : ``behavior = "flee"``
+        (visibles, en mouvement, vers les bords). Ils **disparaissent**
+        (``hidden``) uniquement quand ils **touchent un bord de l'écran**
+        (``_maybe_hide_at_border`` dans ``npc.py``). Quand le joueur est
+        redevenu normal (``monster2_active`` désactivé), ils **reviennent**
+        (``hidden`` = ``False``) et reprennent leur comportement « de base ».
+        Effet réversible, dérivé de l'état (flag) : aucun effet permanent.
 
         Note : chaque ``change_map`` recharge la carte (nouveaux objets
-        NPC) ; on re-capture donc les PNJ *après* chaque transition.
+        NPC) ; on re-capture donc les PNJ *après* chaque transition. En
+        un seul frame (0.016 s), les PNJ n'ont pas le temps d'atteindre
+        un bord : ``hidden`` reste ``False`` (les PNJ sont visibles en
+        fuite).
         """
         def npcs():
             return self.game.game_map.npcs
@@ -169,13 +174,19 @@ class TestFullQuest(BaseTestCase):
             )
 
         # --- 1) Joueur transformé en boss (monster2_active = True) :
-        #       PNJ normaux sortent, « Monstre » reste.
+        #       PNJ normaux fuyent (visibles, ``hidden`` = False),
+        #       « Monstre » reste.
         self.game.world.flag_set("monster2_active", True)
         self._enter(0)
         self.assertTrue(self.game.world.flag_get("monster2_active"))
         for npc in others():
-            self.assertTrue(
-                npc.hidden, f"{npc.name} devrait fuir le village"
+            self.assertFalse(
+                npc.hidden,
+                f"{npc.name} devrait être visible (en fuite, pas encore "
+                f"au bord)"
+            )
+            self.assertEqual(
+                npc.behavior, "flee", f"{npc.name} devrait fuir"
             )
         self.assertFalse(
             monster().hidden,
@@ -196,13 +207,18 @@ class TestFullQuest(BaseTestCase):
             )
         self.assertFalse(monster().hidden, "Le « Monstre » doit rester")
 
-        # --- 3) Joueur de nouveau boss : les PNJ sortent à nouveau.
+        # --- 3) Joueur de nouveau boss : les PNJ fuyent à nouveau.
         self.game.world.flag_set("monster2_active", True)
         self._enter(0)
         self.assertTrue(self.game.world.flag_get("monster2_active"))
         for npc in others():
-            self.assertTrue(
-                npc.hidden, f"{npc.name} devrait fuir (de nouveau)"
+            self.assertFalse(
+                npc.hidden,
+                f"{npc.name} devrait être visible (en fuite, pas encore "
+                f"au bord)"
+            )
+            self.assertEqual(
+                npc.behavior, "flee", f"{npc.name} devrait fuir"
             )
         self.assertFalse(
             monster().hidden,

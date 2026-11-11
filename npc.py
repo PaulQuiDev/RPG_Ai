@@ -70,6 +70,8 @@ from settings import (
     NPC_DEFAULT_SPEED,
     NPC_INTERACT_COOLDOWN,
     SPRITE_SCALE,
+    WINDOW_HEIGHT,
+    WINDOW_WIDTH,
 )
 from sprite_loader import resolve_crop_config, slice_sprite_sheet
 
@@ -105,6 +107,9 @@ class Npc:
             raise ValueError("NPC : champ 'pos' manquant.")
 
         self.index = index
+        # Position de base (celle du JSON) : à laquelle le PNJ revient
+        # quand il sort de sa fuite (réapparaît).
+        self._base_pos = (float(pos[0]), float(pos[1]))
         # Réfrence sur le dict source (déclaré dans settings/JSON) :
         # permet au monde de retirer précisément *ce* PNJ de la donnée
         # persistante de la carte (même objet que self.npc_data[i]).
@@ -188,7 +193,9 @@ class Npc:
         # clipé par le bord de la fenêtre). C'est la solution générale :
         # les PNJ ne « disparaissent » plus contre le bord, et ce pour
         # tous les types de PNJ sur toutes les cartes.
-        self.x, self.y = self._clamp_to_view(self.x, self.y, game_map)
+        self.x, self.y = self._clamp_to_view(
+            self.x, self.y, game_map, self.behavior == "flee"
+        )
         if self.behavior == "flee":
             self._flee(dt, game_map, player)
         elif self.behavior == "patrol" and self.path:
@@ -197,7 +204,15 @@ class Npc:
     def _flee(self, dt: float, game_map, player):
         """Fuite du joueur : s'éloigne au plus vite, en contournant les
         obstacles (même logique que la patrouille : si bloqué, on contourne
-        avec une déviation perpendiculaire ; sinon on s'arrête)."""
+        avec une déviation perpendiculaire ; sinon on s'arrête).
+
+        Le PNJ fuit vers le bord de l'écran. C'est la règle « seuls les
+        PNJ qui touchent les bords ont le droit de disparaître » : dès
+        qu'il est au bord (zone visible limit), il se masque (``hidden =
+        True``). Un PNJ bloqué par un mur ne touche pas un bord et reste
+        donc visible. La disparition est réversible : ``sync_npc_presence``
+        le ramène à sa position de base quand le joueur redevient normal.
+        """
         if player is None:
             self._stop()
             return
@@ -211,28 +226,65 @@ class Npc:
             uy = dx / max(d, 1.0)
             step = self.speed * dt
             cand_x, cand_y = ux * step, uy * step
-            nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
+            nx, ny = self._clamp_to_view(
+                self.x + cand_x, self.y + cand_y, game_map
+            )
             if not self._is_blocked(nx, ny, game_map, player):
                 self._move_to(nx, ny, cand_x, cand_y, dt)
             else:
                 self._stop()
+            self._maybe_hide_at_border(game_map)
             return
         ux, uy = dx / d, dy / d
         step = self.speed * dt
         cand_x, cand_y = ux * step, uy * step
-        nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
+        nx, ny = self._clamp_to_view(
+            self.x + cand_x, self.y + cand_y, game_map
+        )
         if not self._is_blocked(nx, ny, game_map, player):
             self._move_to(nx, ny, cand_x, cand_y, dt)
-            return
-        # Bloqué : on tente de contourner (perpendiculaires).
-        for sign in (1.0, -1.0):
-            cand_x = (-uy * sign) * step * 0.7
-            cand_y = (ux * sign) * step * 0.7
-            nx, ny = self._clamp_to_view(self.x + cand_x, self.y + cand_y, game_map)
-            if not self._is_blocked(nx, ny, game_map, player):
-                self._move_to(nx, ny, cand_x, cand_y, dt)
-                return
-        self._stop()
+        else:
+            # Bloqué : on tente de contourner (perpendiculaires).
+            for sign in (1.0, -1.0):
+                cand_x = (-uy * sign) * step * 0.7
+                cand_y = (ux * sign) * step * 0.7
+                nx, ny = self._clamp_to_view(
+                    self.x + cand_x, self.y + cand_y, game_map
+                )
+                if not self._is_blocked(nx, ny, game_map, player):
+                    self._move_to(nx, ny, cand_x, cand_y, dt)
+                    return
+            self._stop()
+        self._maybe_hide_at_border(game_map)
+
+    def _maybe_hide_at_border(self, game_map):
+        """Masque le PNJ (``hidden``) s'il est au bord de la zone visible.
+
+        C'est le moment exact où le PNJ « touche le bord » : il disparaît.
+        """
+        if self._is_at_border(game_map):
+            self.hidden = True
+
+    def _is_at_border(self, game_map, eps=8.0):
+        """True si le PNJ est au bord de la zone visible (à masquer).
+
+        Le PNJ est clamped pour rester entièrement visible ; il est « au
+        bord » quand sa position est à ``eps`` px de la limite de la zone
+        visible (c'est-à-dire près du bord de l'écran).
+        """
+        margin_x, margin_y_top, margin_y_bottom = self._sprite_margins(
+            game_map
+        )
+        min_x = margin_x
+        max_x = game_map.width - margin_x
+        min_y = margin_y_top
+        max_y = game_map.height - margin_y_bottom
+        return (
+            self.x <= min_x + eps
+            or self.x >= max_x - eps
+            or self.y <= min_y + eps
+            or self.y >= max_y - eps
+        )
 
     def _patrol(self, dt: float, game_map, player):
         """Avance vers le waypoint courant, en boucle fermée.
@@ -368,15 +420,29 @@ class Npc:
         margin_y_bottom = 12.0
         return float(margin_x), float(margin_y_top), float(margin_y_bottom)
 
-    def _clamp_to_view(self, nx, ny, game_map):
+    def _clamp_to_view(self, nx, ny, game_map, allow_offscreen=False):
         """Clampe (nx, ny) pour que le sprite soit entièrement visible.
 
         Remplace le vieux clamp fixe à 5.0 (trop petit : le sprite ~150px
-        haut était clipé au bord haut → « PNJ disparaît »).
+        haut était clipé au bord haut → « PNJ disparaît ».
+
+        ``allow_offscreen`` : True quand le PNJ fuit vers le bord — il
+        peut alors sortir de la fenêtre (pour « disparaître »).
+        False (défaut) : le sprite reste entièrement visible.
         """
-        margin_x, margin_y_top, margin_y_bottom = self._sprite_margins(game_map)
-        nx = max(margin_x, min(game_map.width - margin_x, nx))
-        ny = max(margin_y_top, min(game_map.height - margin_y_bottom, ny))
+        if not allow_offscreen:
+            margin_x, margin_y_top, margin_y_bottom = self._sprite_margins(
+                game_map
+            )
+            nx = max(margin_x, min(game_map.width - margin_x, nx))
+            ny = max(margin_y_top, min(game_map.height - margin_y_bottom, ny))
+            return nx, ny
+        # Fuite : le PNJ peut sortir de la fenêtre. On clamp seulement pour
+        # éviter de partir trop loin (le sprite entièrement hors écran).
+        _, _, _ = self._sprite_margins(game_map)
+        max_off = max(80.0, float(game_map.height) * 0.2)
+        nx = max(-max_off, min(float(game_map.width) + max_off, nx))
+        ny = max(-max_off, min(float(game_map.height) + max_off, ny))
         return nx, ny
 
     def set_sprite(self, sprite_path):

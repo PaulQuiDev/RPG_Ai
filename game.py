@@ -794,24 +794,31 @@ class Game:
         )
 
     def sync_npc_presence(self):
-        """Synchronise la présence (fuite non définitive) ET la FORME des
-        PNJ du village avec l'état transformation du joueur (P4).
+        """Synchronise la présence ET la FORME des PNJ du village avec l'état
+        transformation du joueur (P4).
 
-        Quand le joueur est en forme boss (``monster2_active`` levé),
-        les PNJ du village — hors du « Monstre », qui est la forme du
-        joueur (P4) et reste toujours — « fuient » la carte du village :
-        ``hidden`` (invisibles, inactifs, non interactifs, pas de
-        collision). Quand le joueur est redevenu normal
-        (``monster2_active`` désactivé), ils reviennent
-        (``hidden`` remis à ``False``) et reprennent leur comportement
-        « de base » (celui du JSON, conservé dans ``_base_behavior``).
+        Quand le joueur est en forme boss (``monster2_active`` levé), les
+        PNJ du village — hors du « Monstre », qui est la forme du joueur
+        (P4) et reste toujours — **fuyent** : ``behavior = "flee"`` (visibles,
+        en mouvement, vers les bords). Ils **disparaissent** (``hidden``)
+        uniquement quand ils **touchent un bord de l'écran** (``_maybe_hide_at_border``
+        dans ``npc.py``) : c'est la règle « seuls les PNJ qui touchent les
+        bords ont le droit de disparaître ». Un PNJ bloqué par un mur ne
+        touche pas un bord et reste donc **visible** (on ne le masque pas
+        à la main : il fuit, mais ne disparaît pas).
+
+        Quand le joueur est redevenu normal (``monster2_active`` désactivé),
+        tous les PNJ **reviennent** (``hidden`` = ``False``) et reprennent
+        leur comportement « de base » (celui du JSON, conservé dans
+        ``_base_behavior``). Les PNJ non-mangés reviennent à leur position
+        de base.
 
         Réversible, dérivé de l'état : appelé à chaque tick, aucun effet
         permanent. ``_apply_village_npc_flee`` (et son drapeau
         ``_npc_flee_applied`` + ``behavior = "flee"``) est conservé pour
         la compatibilité avec ``test_full_quest.py`` (assertion sur
         ``behavior``) ; ``sync_npc_presence`` est la source de vérité
-        pour la présence (``hidden``).
+        pour la présence (``hidden``) et le comportement.
 
         Ne fait rien hors du village : la fuite est propre à la carte
         ``Village`` (critère identique à celui de l'aventure /
@@ -823,18 +830,30 @@ class Game:
             return
         monster2 = bool(self.world.flag_get("monster2_active"))
         for npc in self.game_map.npcs:
-            # Le « Monstre » du village est la forme du joueur (P4) :
-            # il n'est jamais « en fuite », toujours présent.
             if npc.name == "Monstre":
+                # Le « Monstre » du village est la forme du joueur (P4) :
+                # il n'est jamais « en fuite », toujours présent.
                 target_hidden = False
+                target_behavior = npc._base_behavior
             else:
-                target_hidden = monster2
+                if monster2:
+                    # Boss : le PNJ fuit (visible, ``hidden`` = False).
+                    # Il disparaît uniquement s'il touche un bord
+                    # (``_maybe_hide_at_border``).
+                    target_hidden = False
+                    target_behavior = "flee"
+                else:
+                    # Normal : le PNJ revient (visible).
+                    target_hidden = False
+                    target_behavior = npc._base_behavior
             if npc.hidden != target_hidden:
                 npc.hidden = target_hidden
-                if not target_hidden:
-                    # Retour à la carte : comportement « de base » (celui
-                    # du JSON), pas le « flee » imposé pendant la fuite.
-                    npc.behavior = npc._base_behavior
+                if not target_hidden and npc.name != "Monstre":
+                    # Retour : le PNJ était peut-être au bord (fuite).
+                    # On le ramène à sa position de base.
+                    npc.x, npc.y = npc._base_pos
+            if npc.behavior != target_behavior:
+                npc.behavior = target_behavior
             # FORME du « Monstre » du village : suit monster2_active.
             # On ne rechange le sprite qu'à la transition (pas chaque
             # frame) pour éviter de recharger la feuille de sprite.
