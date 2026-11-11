@@ -124,6 +124,7 @@ class MapEditor:
         self.map_bg_path = self.map_mask_path = None
         self.bg_orig = self.mask_src = self.mask_display = self.bg_display = None
         self.mask_orig_backup = None
+        self._mask_display_dirty = False
         self._dirty_mask = False
         self._dirty_json = False
         self.orig_w = self.orig_h = 0
@@ -195,6 +196,7 @@ class MapEditor:
         self.display_h = self.bg_display.get_height()
         self.off_x = SIDEBAR_W + (cw - self.display_w) // 2
         self.off_y = TOP_H + (ch - self.display_h) // 2
+        self._mask_display_dirty = False
 
     # -------------------------------------------------------------------
     # Coordonnées
@@ -263,6 +265,7 @@ class MapEditor:
 
     def _set_dirty_mask(self):
         self._dirty_mask = True
+        self._mask_display_dirty = True
 
     def _set_dirty_json(self):
         self._dirty_json = True
@@ -465,6 +468,10 @@ class MapEditor:
     def _draw_canvas(self, screen):
         if self.bg_display is None:
             return
+        if self._mask_display_dirty and self.mask_src is not None and self.display_w and self.display_h:
+            self.mask_display = pygame.transform.smoothscale(
+                self.mask_src, (self.display_w, self.display_h))
+            self._mask_display_dirty = False
         screen.blit(self.bg_display, (self.off_x, self.off_y))
         if self.mask_display is not None:
             ov = self.mask_display.copy()
@@ -480,10 +487,12 @@ class MapEditor:
             wx, wy = obj["pos"]
             cx, cy = self.win_to_canvas_local(wx, wy)
             sel = i == self.selected_obj
-            pygame.draw.circle(screen, RED if sel else (255, 210, 90), (int(cx), int(cy)), 8)
-            pygame.draw.circle(screen, BLACK, (int(cx), int(cy)), 8, 1)
+            sx, sy = self.off_x + cx, self.off_y + cy
+            pygame.draw.circle(screen, RED if sel else (255, 210, 90),
+                               (int(round(sx)), int(round(sy))), 8)
+            pygame.draw.circle(screen, BLACK, (int(round(sx)), int(round(sy))), 8, 1)
             t = self.font_small.render(obj.get("name", f"O{i + 1}"), True, WHITE)
-            screen.blit(t, (int(cx) + 10, int(cy) - 4))
+            screen.blit(t, (int(round(sx)) + 10, int(round(sy)) - 4))
 
     def _btn(self, screen, rect, label, active=False, accent=ACCENT):
         pygame.draw.rect(screen, accent if active else DARK, rect, border_radius=6)
