@@ -10,21 +10,32 @@ Interface graphique pour éditer les cartes de RPG_Ai :
     nommer, action) ;
   * enregistrement dans le JSON d'aventure (objets, noms, actions) et
     dans le PNG du masque (segmentation), avec sauvegarde de sécurité
-    (<masque>_backup.png).
+    (<masque>_backup.png) ;
+  * « Enregistrer sous… » : exporter l'aventure (JSON + assets) dans un
+    dossier choisi — le JSON exporté utilise des chemins relatifs au
+    dossier, et les assets (fond, masque, sprites) sont copiés, pour une
+    aventure importable par le jeu (main.py --adv) ;
+  * « Nouvelle aventure » : créer une aventure vierge à partir d'une image
+    de fond + d'un masque (copiés dans le dossier du JSON).
 
 Lancement :
     python map_editor.py [chemin/vers/aventure.json]
   (défaut : adventures/<DEFAULT_ADVENTURE>.json)
+    python map_editor.py --export CHEMIN   # exporter l'aventure courante
+    python map_editor.py --new-fond FOND --new-masque MASQUE --new-json JSON
+  (mode sans écran : --headless, --frames N)
 
 Touches :
   P peindre   F remplir   A ajouter   M déplacer   D supprimer
-  Z annuler   S enregistrer   Entrée (valide champ)   Échap (quitte)
-  < > changer de carte
+  Z annuler   S enregistrer   Ctrl+S enregistrer sous   Ctrl+N nouvelle aventure
+  Entrée (valide champ)   Échap (quitte)   < > changer de carte
 """
 
 import argparse
 import json
 import os
+import shutil
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -49,7 +60,7 @@ EDITOR_WINDOW_W = 1360
 EDITOR_WINDOW_H = 760
 SIDEBAR_W = 320
 TOP_H = 46
-BOTTOM_H = 30
+BOTTOM_H = 42
 MARGIN = 12
 
 WHITE = (242, 242, 247)
@@ -111,6 +122,8 @@ class MapEditor:
         self.font_small = pygame.font.Font(None, 15)
 
         self._adventure_path = Path(adventure_path)
+        self.headless = headless
+        self._config_dir = self._adventure_path.parent
         self.data = {}
         self.map_idx = 0
         self.tool = "paint"
@@ -156,6 +169,21 @@ class MapEditor:
             raise ValueError(f"Aventure invalide (pas de 'maps') : {p}")
         self.status = f"Aventure : {p.name} — {len(self.data['maps'])} carte(s)"
 
+    def _resolve_asset(self, path_str):
+        """Chemin relatif (d'abord le dossier du JSON, fallback ``BASE_DIR``)
+        ou absolu : renvoie un ``Path`` absolu existant. Même logique que
+        ``settings._resolve_asset`` mais auto-contenu, pour l'export."""
+        p = Path(path_str)
+        if p.is_absolute():
+            return p
+        cand_cfg = self._config_dir / p
+        if cand_cfg.exists():
+            return cand_cfg
+        cand_base = BASE_DIR / p
+        if cand_base.exists():
+            return cand_base
+        return cand_cfg
+
     def _select_map(self, idx):
         idx = max(0, min(idx, len(self.data["maps"]) - 1))
         if idx == self.map_idx and self.mask_src is not None:
@@ -171,8 +199,8 @@ class MapEditor:
         if not bg_rel or not mask_rel:
             self.status = "Cette carte n'a ni 'background' ni 'mask'."
             return
-        self.map_bg_path = BASE_DIR / bg_rel
-        self.map_mask_path = BASE_DIR / mask_rel
+        self.map_bg_path = self._resolve_asset(bg_rel)
+        self.map_mask_path = self._resolve_asset(mask_rel)
         if not self.map_bg_path.exists() or not self.map_mask_path.exists():
             self.status = f"Fichiers manquants : {self.map_bg_path.name}"
             return
@@ -246,14 +274,15 @@ class MapEditor:
         me = data["maps"][self.map_idx]
         bg_rel = me.get("background")
         if bg_rel:
-            bg = pygame.image.load(str(BASE_DIR / bg_rel)).convert()
+            bg = pygame.image.load(str(self._resolve_asset(bg_rel))).convert()
             self.bg_orig = bg
             self.orig_w, self.orig_h = self.bg_orig.get_size()
         if mask is not None:
             self.mask_src = mask
             self.mask_orig_backup = mask.copy()
         self.map_entry = me
-        self.map_mask_path = BASE_DIR / me.get("mask")
+        mask_rel = me.get("mask")
+        self.map_mask_path = self._resolve_asset(mask_rel) if mask_rel else None
         if self.bg_orig is not None and self.mask_src is not None:
             self._fit_image()
         self.selected_obj = None
@@ -425,6 +454,254 @@ class MapEditor:
         return m or j
 
     # -------------------------------------------------------------------
+    # Export (enregistrer sous…) / nouvelle aventure
+    # -------------------------------------------------------------------
+    def _short_path(self, p):
+        """Voie courte (…/…/nom) pour la barre de statut."""
+        if p is None:
+            return "-"
+        s = str(p)
+        parts = Path(s).parts
+        if len(parts) <= 3:
+            return s
+        return "…" + "/" + "/".join(parts[-3:])
+
+    def _save_info(self):
+        """Voies courantes de la carte (JSON, fond, masque) pour la barre bas."""
+        parts = [f"JSON {self._short_path(self._adventure_path)}"]
+        if self.map_bg_path:
+            parts.append(f"fond {self._short_path(self.map_bg_path)}")
+        if self.map_mask_path:
+            parts.append(f"masque {self._short_path(self.map_mask_path)}")
+        return "  ·  ".join(parts)
+
+    def _create_new_adventure(self, fond_path, masque_path, json_path):
+        """Créer une aventure vierge (1 carte) à partir d'une image de fond
+        et d'un masque : les images sont copiées dans le dossier du JSON,
+        le JSON est initialisé (carte vide à compléter). Renvoie le dossier
+        de sortie."""
+        fond_path, masque_path, json_path = (Path(fond_path), Path(masque_path),
+                                             Path(json_path))
+        if not fond_path.exists():
+            raise FileNotFoundError(f"Fond introuvable : {fond_path}")
+        if not masque_path.exists():
+            raise FileNotFoundError(f"Masque introuvable : {masque_path}")
+        out_dir = json_path.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_json = json_path
+        def _unique_name(name, ext):
+            p = out_dir / (name + ext)
+            n = 1
+            while p.exists():
+                p = out_dir / (f"{name}_{n}{ext}")
+                n += 1
+            return p
+        fond_dest = _unique_name("fond", ".png")
+        masque_dest = _unique_name("masque", ".png")
+        shutil.copy2(str(fond_path), str(fond_dest))
+        shutil.copy2(str(masque_path), str(masque_dest))
+        self._adventure_path = out_json
+        self._config_dir = out_dir
+        # Copier les sprites des personnages dans le dossier pour une aventure
+        # autosuffisante (même logique que _export).
+        old_chars = deepcopy(self.data.get("characters", []))
+        def _copy_asset(rel):
+            src = self._resolve_asset(rel)
+            if not src.exists():
+                return rel
+            dest = out_dir / src.name
+            base, suffix = dest.stem, dest.suffix
+            n = 1
+            while dest.exists() and dest.resolve() != src.resolve():
+                dest = out_dir / (f"{base}_{n}{suffix}")
+                n += 1
+            shutil.copy2(str(src), str(dest))
+            return dest.name
+        for ch in old_chars:
+            if isinstance(ch.get("sprite"), str):
+                ch["sprite"] = _copy_asset(ch["sprite"])
+        self.data = {
+            "name": out_json.stem,
+            "title": f"RPG - {out_json.stem}",
+            "window_title": "RPG - Prototype",
+            "start_map": "Carte 1",
+            "characters": old_chars,
+            "flags": {},
+            "maps": [{"name": "Carte 1", "background": fond_dest.name,
+                      "mask": masque_dest.name, "interactions": [], "requires": []}],
+        }
+        # Écrire le JSON (la carte est volontairement vide à compléter dans
+        # l'éditeur : objets, noms, actions).
+        with out_json.open("w", encoding="utf-8") as fh:
+            json.dump(self.data, fh, indent=2, ensure_ascii=False)
+        self.map_bg_path = fond_dest
+        self.map_mask_path = masque_dest
+        self.map_entry = self.data["maps"][0]
+        self.bg_orig = pygame.image.load(str(fond_dest)).convert()
+        self.mask_src = pygame.image.load(str(masque_dest)).convert()
+        self.mask_orig_backup = self.mask_src.copy()
+        self.orig_w, self.orig_h = self.bg_orig.get_size()
+        self.win_w, self.win_h = WINDOW_WIDTH, WINDOW_HEIGHT
+        self.map_idx = 0
+        self.selected_obj = None
+        self.interact_warning = ""
+        self._mask_display_dirty = False
+        self._dirty_mask = False
+        self._dirty_json = True
+        self._fit_image()
+        self._init_fields()
+        self._push_undo()
+        self.status = f"Nouvelle aventure : {out_json.name} — dossier : {out_dir}"
+        return out_dir
+
+    def _export(self, json_path):
+        """Exporter l'aventure courante (JSON + assets) dans le dossier du
+        chemin fourni. Le JSON exporté utilise des chemins RELATIFS au
+        dossier du JSON, et les assets (fond, masque, foreground, variants,
+        sprites des personnages/PNJ) y sont copiés. Renvoie la liste des
+        fichiers copiés."""
+        out_json = Path(json_path).resolve()
+        out_dir = out_json.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        data_out = deepcopy(self.data)
+        copied, warnings = [], []
+        def _copy_asset(rel, container, key):
+            if not isinstance(rel, str):
+                return
+            src = self._resolve_asset(rel)
+            if not src.exists():
+                warnings.append(f"asset introuvable : {rel}")
+                return
+            dest = out_dir / src.name
+            base, suffix = dest.stem, dest.suffix
+            n = 1
+            while dest.exists() and dest.resolve() != src.resolve():
+                dest = out_dir / (f"{base}_{n}{suffix}")
+                n += 1
+            try:
+                shutil.copy2(str(src), str(dest))
+            except Exception as e:
+                warnings.append(f"copie échouée : {e}")
+                return
+            copied.append(dest.name)
+            container[key] = dest.name
+        for m in data_out.get("maps", []) or []:
+            for key in ("background", "mask", "foreground"):
+                _copy_asset(m.get(key), m, key)
+            variants = m.get("variants")
+            if isinstance(variants, dict):
+                for key, paths in variants.items():
+                    if not isinstance(paths, list):
+                        continue
+                    for i, rel in enumerate(paths):
+                        if not isinstance(rel, str):
+                            continue
+                        src = self._resolve_asset(rel)
+                        if not src.exists():
+                            warnings.append(f"asset introuvable : {rel}")
+                            continue
+                        dest = out_dir / src.name
+                        base, suffix = dest.stem, dest.suffix
+                        n = 1
+                        while dest.exists():
+                            dest = out_dir / (f"{base}_{n}{suffix}")
+                            n += 1
+                        shutil.copy2(str(src), str(dest))
+                        copied.append(dest.name)
+                        paths[i] = dest.name
+            for np_ in m.get("npcs") or []:
+                if isinstance(np_.get("sprite"), str):
+                    _copy_asset(np_["sprite"], np_, "sprite")
+        for ch in data_out.get("characters", []) or []:
+            if isinstance(ch.get("sprite"), str):
+                _copy_asset(ch["sprite"], ch, "sprite")
+        tmp = out_json.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            json.dump(data_out, fh, indent=2, ensure_ascii=False)
+        tmp.rename(out_json)
+        if warnings:
+            self.status = f"Exporté vers {out_dir} (avertissements : {len(warnings)})."
+        else:
+            self.status = (f"Exporté vers {out_dir} : JSON écrit, "
+                           f"{len(copied)} asset(s) copié(s).")
+        return copied
+
+    def _save_as(self):
+        """Fenêtre « Enregistrer sous… » : choisir un dossier, exporter
+        l'aventure (JSON + assets) et afficher le résultat."""
+        if self.headless:
+            self.status = "« Enregistrer sous… » indisponible (mode sans écran)."
+            return
+        try:
+            import tkinter
+            from tkinter import filedialog
+            root = tkinter.Tk()
+            root.withdraw()
+            root.update()
+            chosen = filedialog.asksaveasfilename(
+                parent=root,
+                initialfile=str(self._adventure_path.name),
+                initialdir=str(self._adventure_path.parent),
+                defaultextension=".json",
+                filetypes=[("Fichier d'aventure (JSON)", "*.json"), ("Tous", "*.*")])
+            root.destroy()
+        except Exception as e:
+            self.status = f"Dialogue indisponible : {e}"
+            return
+        if not chosen:
+            return
+        try:
+            self._export(str(chosen))
+        except Exception as e:
+            self.status = f"Export impossible : {e}"
+
+    def _new_adventure(self):
+        """Fenêtre « Nouvelle aventure » : choisir fond, masque et JSON,
+        puis initialiser une aventure vierge."""
+        if self.headless:
+            self.status = "« Nouvelle aventure » indisponible (mode sans écran)."
+            return
+        try:
+            import tkinter
+            from tkinter import filedialog
+            root = tkinter.Tk()
+            root.withdraw()
+            root.update()
+            json_path = filedialog.asksaveasfilename(
+                parent=root,
+                initialfile="ma-aventure.json",
+                defaultextension=".json",
+                filetypes=[("Fichier d'aventure (JSON)", "*.json"), ("Tous", "*.*")])
+            root.update()
+            if not json_path:
+                root.destroy()
+                return
+            fond_path = filedialog.askopenfilename(
+                parent=root,
+                title="Choisir le fond (image)",
+                filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp"), ("Tous", "*.*")])
+            root.update()
+            if not fond_path:
+                root.destroy()
+                return
+            masque_path = filedialog.askopenfilename(
+                parent=root,
+                title="Choisir le masque (segmentation)",
+                filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp"), ("Tous", "*.*")])
+            root.update()
+            if not masque_path:
+                root.destroy()
+                return
+            root.destroy()
+        except Exception as e:
+            self.status = f"Dialogues indisponibles : {e}"
+            return
+        try:
+            self._create_new_adventure(fond_path, masque_path, json_path)
+        except Exception as e:
+            self.status = f"Impossible de créer l'aventure : {e}"
+
+    # -------------------------------------------------------------------
     # Layout sidebar (source unique : dessin + clics)
     # -------------------------------------------------------------------
     def _layout(self):
@@ -446,12 +723,20 @@ class MapEditor:
         y += 30
         panel = pygame.Rect(18, y, SIDEBAR_W - 36, 172)
         y += 186
+        # rangée 1 : enregistrer / enregistrer-sous / nouvelle aventure
+        y1 = y
+        save_btn = pygame.Rect(18, y1, 90, 28)
+        saveas_btn = pygame.Rect(114, y1, 90, 28)
+        new_btn = pygame.Rect(210, y1, 90, 28)
+        # rangée 2 : carte précédente / recharger
+        y2 = y1 + 31
+        revert_btn = pygame.Rect(18, y2, 90, 28)
+        undo_btn = pygame.Rect(114, y2, 90, 28)
         return dict(top=top, map_row=map_row, tools=tools, palette=palette,
                     brush_slider=brush_slider, alpha_slider=alpha_slider,
                     panel=panel,
-                    save_btn=pygame.Rect(18, y, 90, 28),
-                    revert_btn=pygame.Rect(114, y, 90, 28),
-                    undo_btn=pygame.Rect(210, y, 90, 28))
+                    save_btn=save_btn, saveas_btn=saveas_btn, new_btn=new_btn,
+                    revert_btn=revert_btn, undo_btn=undo_btn)
 
     def _field_rects(self, panel):
         if self.selected_obj is None or not self.map_entry:
@@ -494,10 +779,11 @@ class MapEditor:
             t = self.font_small.render(obj.get("name", f"O{i + 1}"), True, WHITE)
             screen.blit(t, (int(round(sx)) + 10, int(round(sy)) - 4))
 
-    def _btn(self, screen, rect, label, active=False, accent=ACCENT):
+    def _btn(self, screen, rect, label, active=False, accent=ACCENT, font=None):
         pygame.draw.rect(screen, accent if active else DARK, rect, border_radius=6)
         pygame.draw.rect(screen, WHITE if active else (80, 83, 96), rect, 1, border_radius=6)
-        t = self.font_s.render(label, True, WHITE if active else GRAY_LIGHT)
+        f = font or self.font_s
+        t = f.render(label, True, WHITE if active else GRAY_LIGHT)
         screen.blit(t, (rect.x + 8, rect.y + (rect.h - t.get_height()) // 2))
 
     def _slider(self, screen, rect, value, min_v, max_v):
@@ -551,6 +837,8 @@ class MapEditor:
             screen.blit(t, (L["panel"].x + 10, L["panel"].y + 150))
             self._btn(screen, fr["delete"], "Supprimer l'objet", accent=RED)
         self._btn(screen, L["save_btn"], "Enregistrer", accent=(90, 210, 120))
+        self._btn(screen, L["saveas_btn"], "Sous…", font=self.font_small)
+        self._btn(screen, L["new_btn"], "Nouvelle", font=self.font_small)
         self._btn(screen, L["revert_btn"], "Carte préc.")
         self._btn(screen, L["undo_btn"], "Recharger")
         if self.selected_obj is not None and self.interact_warning:
@@ -572,7 +860,11 @@ class MapEditor:
         pygame.draw.rect(screen, DARK, (0, EDITOR_WINDOW_H - BOTTOM_H, EDITOR_WINDOW_W, BOTTOM_H))
         st = self.status + ("  [M]" if self._dirty_mask else "") + ("  [J]" if self._dirty_json else "")
         t = self.font_small.render(st, True, YELLOW)
-        screen.blit(t, (12, (BOTTOM_H - t.get_height()) // 2))
+        screen.blit(t, (12, 2))
+        info = self._save_info()
+        if info:
+            ti = self.font_small.render(info, True, GRAY_LIGHT)
+            screen.blit(ti, (12, BOTTOM_H - ti.get_height() - 2))
         pygame.display.flip()
 
     def _draw_cursor(self, screen):
@@ -653,6 +945,12 @@ class MapEditor:
             if k == pygame.K_z:
                 self._pop_undo()
                 return
+            if k == pygame.K_s and event.mod & pygame.KCTRL:
+                self._save_as()
+                return
+            if k == pygame.K_n and event.mod & pygame.KCTRL:
+                self._new_adventure()
+                return
             if k == pygame.K_s:
                 self.save_all()
                 return
@@ -719,6 +1017,12 @@ class MapEditor:
                     return
             if L["save_btn"].collidepoint(pos):
                 self.save_all()
+                return
+            if L["saveas_btn"].collidepoint(pos):
+                self._save_as()
+                return
+            if L["new_btn"].collidepoint(pos):
+                self._new_adventure()
                 return
             if L["revert_btn"].collidepoint(pos):
                 if self.map_idx > 0:
@@ -816,8 +1120,21 @@ def main():
                     default=str(ADVENTURES_DIR / (DEFAULT_ADVENTURE + ".json")))
     ap.add_argument("--headless", action="store_true", help="Mode sans écran (test).")
     ap.add_argument("--frames", type=int, default=0, help="Frames max (test).")
+    ap.add_argument("--export", metavar="CHEMIN",
+                    help="Exporter l'aventure courante vers CHEMIN (JSON + assets), puis quitter.")
+    ap.add_argument("--new-fond", help="Nouvelle aventure : image de fond.")
+    ap.add_argument("--new-masque", help="Nouvelle aventure : image du masque.")
+    ap.add_argument("--new-json", help="Nouvelle aventure : chemin du JSON de sortie.")
     args = ap.parse_args()
     editor = MapEditor(args.adventure, headless=args.headless)
+    if args.export:
+        editor._export(args.export)
+        print(editor.status)
+        return
+    if args.new_fond and args.new_masque and args.new_json:
+        editor._create_new_adventure(args.new_fond, args.new_masque, args.new_json)
+        print(editor.status)
+        return
     editor.run(max_frames=args.frames if args.frames else None)
 
 

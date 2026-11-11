@@ -128,15 +128,28 @@ def apply_sprite_overrides(data: dict) -> dict:
 # module : elles sont chargées depuis des fichiers JSON du répertoire
 # ``adventures/``. Chaque fichier est une aventure. Les chemins d'assets y
 # sont relatifs à la racine du projet (BASE_DIR) et résolus à la charge.
-def _resolve_asset(path_str):
+def _resolve_asset(path_str, config_dir=None):
     """Résoudre un chemin d'asset (relatif ou absolu) vers un Path absolu.
 
-    Les chemins relatifs sont interprétés relativement à ``BASE_DIR``.
+    Chemins relatifs :
+      * si ``config_dir`` (dossier du JSON d'aventure) est fourni, on cherche
+        d'abord dans ce dossier ; c'est ce qui permet à une aventure
+        *exportée* (JSON + assets dans le même dossier) d'être importée ;
+      * fallback : ``BASE_DIR`` (l'aventure par défaut y pointe) ;
+      * dernier recourt : le candidat ``config_dir`` (message d'erreur clair).
+    Chemins absolus : conservés tels quels.
     """
     p = Path(path_str)
     if p.is_absolute():
         return p
-    return BASE_DIR / p
+    if config_dir is not None:
+        cand_cfg = config_dir / p
+        if cand_cfg.exists():
+            return cand_cfg
+    cand_base = BASE_DIR / p
+    if cand_base.exists():
+        return cand_base
+    return (config_dir / p) if config_dir is not None else cand_base
 
 
 def load_adventure(config_path=None):
@@ -182,14 +195,14 @@ def load_adventure(config_path=None):
     def _load_character(entry):
         out = dict(entry)
         if isinstance(out.get("sprite"), str):
-            out["sprite"] = _resolve_asset(out["sprite"])
+            out["sprite"] = _resolve_asset(out["sprite"], config_path.parent)
         apply_sprite_overrides(out)
         return out
 
     def _load_npc(entry):
         out = dict(entry)
         if isinstance(out.get("sprite"), str):
-            out["sprite"] = _resolve_asset(out["sprite"])
+            out["sprite"] = _resolve_asset(out["sprite"], config_path.parent)
         apply_sprite_overrides(out)
         return out
 
@@ -197,15 +210,15 @@ def load_adventure(config_path=None):
         out = dict(entry)
         for key in ("background", "mask", "foreground"):
             if isinstance(out.get(key), str):
-                out[key] = _resolve_asset(out[key])
+                out[key] = _resolve_asset(out[key], config_path.parent)
         variants = out.get("variants")
         if isinstance(variants, dict):
             out["variants"] = {
-                key: [_resolve_asset(p) for p in values]
+                key: [_resolve_asset(p, config_path.parent) for p in values]
                 for key, values in variants.items()
             }
         if out.get("npcs"):
-            out["npcs"] = [_load_npc(n) for n in out["npcs"]]
+            out["npcs"] = [_load_npc(n) for n in out.get("npcs", [])]
         return out
 
     characters = [_load_character(c) for c in data.get("characters", [])]
