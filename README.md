@@ -32,8 +32,10 @@ l'`.venv/`), lis dans cet ordre :
 12. `sprite_loader.py` — découpe 4x3 des sheets.
 13. `map_editor.py` — **outil** (GUI pygame, headless-safe) pour *créer/éditer*
     les aventures : superposer image + masque (transparence), peindre/remplir
-    la segmentation, définir les objets interactifs (nom/action) et écrire
-    le JSON d'aventure + le masque (backup). N'est pas chargé par le moteur.
+    la segmentation, définir les objets interactifs (nom/action), écrire le
+    JSON + le masque ; **Exporter** (JSON + assets importable par le jeu) et
+    **Nouvelle aventure** (carte vierge depuis un fond + masque). N'est pas
+    chargé par le moteur.
 
 Lancer : `.venv/bin/python main.py [--debug|--window|--fullscreen]`
 Tests : `.venv/bin/python -m pytest tests/`
@@ -50,9 +52,12 @@ cd ~/Bureau/RPG_Ai
                                           #   chemin A* prévu du monstre (ligne blanche + flèche)
 .venv/bin/python main.py --save PATH      # chemin du fichier de sauvegarde (clé S)
 .venv/bin/python main.py --load PATH      # reprise de partie : charge PATH au démarrage
+.venv/bin/python main.py --adv PATH       # lancer une aventure (chemin du JSON, ex. exportée)
 .venv/bin/python smoke_npc.py             # test headless (7 vérifs, sans fenêtre)
 .venv/bin/python map_editor.py [chemin/vers/aventure.json]  # éditeur de carte (GUI)
 .venv/bin/python map_editor.py --headless --frames 3         # smoke test GUI (headless)
+.venv/bin/python map_editor.py --export CHEMIN               # exporter JSON+assets (chemin du JSON)
+.venv/bin/python map_editor.py --new-fond FOND --new-masque MASQUE --new-json JSON  # nouvelle aventure
 ```
 
 ## Comment ça marche (en bref)
@@ -70,7 +75,7 @@ cd ~/Bureau/RPG_Ai
 | `npc.py`            | personnages de carte : statique / patrouille, collision, interaction  |
 | `sprite_loader.py`  | découpe 4x3 des sheets, partagée par le joueur et les NPC            |
 | `tuner.py`          | GUI tkinter : ajuster crops & anchors → `asset/sprite_configs.json`    |
-| `map_editor.py`     | **outil** GUI pygame (headless-safe) : superposer map + masque (transparence), peindre/remplir la segmentation, CRUD objets (nom/action) → sauvegarde JSON + backup masque |
+| `map_editor.py`     | **outil** GUI pygame (headless-safe) : superposer map + masque, peindre/remplir la segmentation, CRUD objets (nom/action) → sauvegarde JSON + backup masque ; **Exporter** (JSON + assets importable) & **Nouvelle aventure** (fond + masque) |
 | `behaviors.py`      | comportements des objets bleus + registre `BEHAVIORS`                |
 | `settings.py`       | toute la config (cartes, personnages, sprites, constants)            |
 
@@ -95,6 +100,11 @@ développer aucune fonctionnalité. Les **briques** (`_setup_monster`,
 `settings.load_adventure()` les charge (résolution des chemins, overrides de
 sprites) → `Game` les consomme (monde, joueur, HUD, quest). Toute la logique
 runtime reste dans le moteur ; l'aventure n'apporte que des **données**.
+Une aventure peut être **exportée** dans n'importe quel dossier
+(`map_editor.py --export CHEMIN`) : le JSON utilise des chemins **relatifs**
+et les assets (fond, masque, sprites, foreground, variants) y sont **copiés**
+→ chargement autonome via `main.py --adv CHEMIN` (résolution : dossier du JSON
+d'abord, fallback `BASE_DIR`).
 
 ## Structure
 
@@ -116,14 +126,15 @@ RPG_Ai/
 ├── sprite_loader.py   # découpe 4x3 des sheets
 ├── tuner.py           # GUI tkinter : ajuster crops & anchors
 ├── map_editor.py      # GUI (pygame, headless) : éditer map + segmentation +
-│                      #   objets (nom/action) → écrire le JSON + backup masque
+│                      #   objets (nom/action), écrire JSON + backup masque ;
+│                      #   Exporter (JSON+assets importable), Nouvelle aventure
 ├── smoke_npc.py       # test headless
 ├── prompte_actelle.txt # prompts de génération d'assets (IA)
 ├── asset/carater/     # sprites 4x3 (femme, monster, champignons, ...)
 ├── asset/world/       # cartes (fond, masques SEG, couches FG, boss)
 ├── adventures/        # aventures : <nom>.json (sprites + hyperparamètres + quest)
 │                      #   + <nom>/logic.py (logique qui orchestre les briques)
-├── tests/             # suite pytest (217 tests passants)
+├── tests/             # suite pytest (216 pass + 1 skip)
 └── Nonranger/         # sorties d'assets IA (Krea2, Qwen)
 ```
 
@@ -143,7 +154,7 @@ RPG_Ai/
 | —  | Clamping du bord (marge sprite). | ✅ RESOLU — les PNJ ne « disparaissent » plus contre le bord : position des pieds clampée à une marge **calculée** à partir de la taille réelle du sprite (facteur de perspective × `scale`) plutôt qu'à 5 px. Solution **globale** — tous les PNJ (statique/patrouille/fuite), toutes les cartes, tous les coins. Tests : `TestNpcEdgeClamp` (bords + 4 coins + patrouille). |
 | —  | Adventures (JSON). | ✅ RESOLU — `adventures/*.json` externalisées + loader + écran de lancement. |
 | —  | Moteur data-driven (JSON + `logic.py`). | ✅ RESOLU — `settings.DEFAULT_ADVENTURE` + loader `load_adventure_logic()` (`adventure.py`), base `Adventure` + 3 logiques (`demo-test`, `forest-quest`, `new`), `Game.__init__` accepte `adventure=`, flux quest (`update`, `_on_map_change`, `_redirect_to_post_combat`) délégué à la logique. Suppression des constantes mortes `FOREST_SEG_*` / `FOREST_BG_*`. Tests : 217 passants. |
-| —  | Éditeur de mapes (`map_editor.py`). | ✅ RESOLU — GUI pygame (headless-safe) : superposition image + masque (transparence), peindre/remplir la segmentation, CRUD objets (nom/action), sauvegarde dans le JSON d'aventure + backup du masque, undo avec restauration correcte des flags dirty. Tests headless : `test_map_editor.py` + `test_events.py` + runtime `test_runtime_game.py` (Game consomme le JSON). |
+| —  | Éditeur de mapes (`map_editor.py`). | ✅ RESOLU — GUI pygame (headless-safe) : superposition image + masque, peindre/remplir la segmentation, CRUD objets (nom/action), sauvegarde JSON + backup masque, undo. **Exporter** l'aventure (JSON + assets importable, `--export`) & **Nouvelle aventure** (fond + masque + sprites, `--new-*`) — JSON écrit, chargeable par `load_adventure`. Game consomme le JSON (runtime `test_full_quest.py`). |
 | —  | Physique : marcher sur les objets. | ✅ RESOLU — `WALKABLE_GREEN_THRESHOLD` 90 → 50 (anti-aliasing, `g` min 58) dans `game_map.is_walkable` ; murs/sol intacts (garde `b > 100`). Test : `test_can_walk_on_central_lantern`. |
 | —  | Type checking. | ✅ RESOLU — `Monster` accepte `str \| Path` pour `sprite_path` ; `assert path is not None` (Pyright) — plus d'erreurs rouges VSCode. |
 
