@@ -24,11 +24,14 @@ Lancement :
     python map_editor.py --export CHEMIN   # exporter l'aventure courante
     python map_editor.py --new-fond FOND --new-masque MASQUE --new-json JSON
   (mode sans écran : --headless, --frames N)
+    python map_editor.py --verify        # testeur : précision peinture + objets
+                                        # + cohérence éditeur/jeu (headless,
+                                        # code retour 0/1)
 
 Touches :
   P peindre   F remplir   A ajouter   M déplacer   D supprimer
   Z annuler   S enregistrer   Ctrl+S enregistrer sous   Ctrl+N nouvelle aventure
-  Entrée (valide champ)   Échap (quitte)   < > changer de carte
+  V vérifier  (testeur coordonnées, overlay)   Entrée (valide champ)   Échap (quitte)   < > changer de carte
 """
 
 import argparse
@@ -149,6 +152,8 @@ class MapEditor:
         self.undo_stack = []
         self._mouse_down = False
         self._drag_obj = None
+        self._show_verify = False
+        self._verify_result = None
         self.running = True
 
         self._load_adventure()
@@ -399,6 +404,190 @@ class MapEditor:
             if not (b > 100 and r < 60 and g > 50):
                 self.interact_warning = ("⚠ Ce point n'est PAS un objet bleu traversable "
                                          "(peignez-le « Objet »).")
+
+    # -------------------------------------------------------------------
+    # Testeur de précision des coordonnées
+    # -------------------------------------------------------------------
+    def _is_interactive_px(self, ox, oy, mask):
+        """True si le pixel ``mask`` (ox, oy) est « objet bleu traversable ».
+        Même critère que ``_check_warning`` (palette « Objet » (0,112,255))."""
+        if mask is None:
+            return False
+        if not (0 <= ox < mask.get_width() and 0 <= oy < mask.get_height()):
+            return False
+        r, g, b = mask.get_at((ox, oy))[:3]
+        return b > 100 and g > 50 and r < 60
+
+    def _per_map_geometry(self, ow, oh):
+        """scale + offset du canvas pour une image (ow, oh).
+        Même formule que ``_fit_image`` (sans charger l'image)."""
+        cw = EDITOR_WINDOW_W - SIDEBAR_W - MARGIN * 2
+        ch = EDITOR_WINDOW_H - TOP_H - BOTTOM_H - MARGIN * 2
+        s = min(cw / max(1, ow), ch / max(1, oh), 1.0)
+        dw = max(1, int(ow * s))
+        dh = max(1, int(oh * s))
+        off_x = SIDEBAR_W + (cw - dw) // 2
+        off_y = TOP_H + (ch - dh) // 2
+        return s, dw, dh, off_x, off_y
+
+    def _load_map_surfaces(self, me):
+        """Renvoie (bg, mask, ow, oh, ok) pour la carte ``me``. Non destructeur."""
+        if not isinstance(me, dict) or not (me.get("background") and me.get("mask")):
+            return None, None, 0, 0, False
+        bgp = self._resolve_asset(me["background"])
+        maskp = self._resolve_asset(me["mask"])
+        if not bgp.exists() or not maskp.exists():
+            return None, None, 0, 0, False
+        try:
+            bg = pygame.image.load(str(bgp)).convert()
+            mask = pygame.image.load(str(maskp)).convert()
+            ow, oh = bg.get_size()
+            return bg, mask, ow, oh, True
+        except Exception:
+            return None, None, 0, 0, False
+
+    def _paint_pixel_at(self, mask, scale, off_x, off_y, sx, sy, paint_color, brush):
+        """Simule un clic « peindre » à la position ÉCRAN (sx, sy) sur ``mask``.
+        Renvoie (ok, expected_orig, error) ; non destructeur (copie du masque).
+        expected_orig = pixel image qui reçoit réellement la couleur."""
+        if mask is None:
+            return False, None, "masque absent"
+        ox = int(round((sx - off_x) / scale))
+        oy = int(round((sy - off_y) / scale))
+        if not (0 <= ox < mask.get_width() and 0 <= oy < mask.get_height()):
+            return False, (ox, oy), f"pixel cible hors image ({ox},{oy})"
+        r = max(1, int(round(brush / scale)))
+        tmp = mask.copy()
+        pygame.draw.circle(tmp, paint_color, (ox, oy), r)
+        got = tuple(tmp.get_at((ox, oy))[:3])
+        if got != tuple(paint_color):
+            return False, (ox, oy), (f"pixel non coloré (attendu {paint_color}, "
+                                      f"reçu {got})")
+        return True, (ox, oy), ""
+
+    def verify_coordinates(self):
+        """Testeur de précision des coordonnées.
+
+        Pour CHAQUE carte : vérifie la position « réelle » de chaque objet
+        sur son image (pixel « bleu »), qu'un clic « peindre » atterrit au
+        pixel image prévu, les limites de fenêtre (cohérence avec le jeu),
+        et le round-trip écran↔fenêtre.
+
+        Renvoie dict : {ok, counts, items, paint, errors, warnings, report}.
+        """
+        maps = self.data.get("maps") or []
+        items, paint, errors, warnings = [], [], [], []
+
+        if not maps:
+            return self._verify_result_dict(False, items, paint,
+                                            ["Aucune carte dans le JSON."], warnings)
+
+        # Round-trip écran↔fenêtre (cohérence éditeur ↔ jeu).
+        for sx, sy in ((self.off_x + 20, self.off_y + 20),
+                       (self.off_x + self.display_w // 2, self.off_y + self.display_h // 2),
+                       (self.off_x + max(0, self.display_w - 20),
+                        self.off_y + max(0, self.display_h - 20))):
+            if not self._in_canvas((sx, sy)):
+                continue
+            cx, cy = self._canvas_local((sx, sy))
+            wx, wy = self.canvas_local_to_win(cx, cy)
+            rcx, rcy = self.win_to_canvas_local(wx, wy)
+            back_sx, back_sy = self.off_x + rcx, self.off_y + rcy
+            if abs(back_sx - sx) > 2.5 or abs(back_sy - sy) > 2.5:
+                errors.append(f"round-trip écran↔fenêtre défaillant : "
+                              f"({sx},{sy}) → ({back_sx:.1f},{back_sy:.1f})")
+
+        for mi, me in enumerate(maps):
+            bg, mask, ow, oh, ok = self._load_map_surfaces(me)
+            me_name = me.get("name", f"Carte {mi + 1}")
+            if not ok:
+                errors.append(f"{me_name} : fond/masque introuvables ou illisibles.")
+                continue
+            s, dw, dh, off_x, off_y = self._per_map_geometry(ow, oh)
+
+            # --- positions réelles des objets sur l'image ---
+            for oi, obj in enumerate(me.get("interactions") or []):
+                if not isinstance(obj, dict):
+                    errors.append(f"{me_name} / objet #{oi}: entrée non-dict.")
+                    continue
+                pos = obj.get("pos") or [0, 0]
+                px, py = float(pos[0]), float(pos[1])
+                item = dict(index=mi, map=me_name, name=obj.get("name", f"O{oi + 1}"),
+                            action=obj.get("action", ""), pos=[px, py],
+                            error="", warning="", in_bounds=False, in_orig=False,
+                            is_blue=False, orig=None, screen=None)
+                in_bounds = 0 <= px < self.win_w and 0 <= py < self.win_h
+                item["in_bounds"] = in_bounds
+                if not in_bounds:
+                    item["error"] = (f"pos [{px:g},{py:g}] hors limites fenêtre "
+                                     f"({self.win_w}×{self.win_h})")
+                ox = int(round(px * ow / self.win_w))
+                oy = int(round(py * oh / self.win_h))
+                item["orig"] = (ox, oy)
+                in_orig = 0 <= ox < ow and 0 <= oy < oh
+                item["in_orig"] = in_orig
+                item["is_blue"] = self._is_interactive_px(ox, oy, mask)
+                if in_bounds and in_orig and not item["is_blue"]:
+                    item["warning"] = ("pixel image N'est PAS « objet bleu » — "
+                                       "peignez-le (outil « Ajouter »)")
+                sx, sy = int(round(off_x + (px * ow / self.win_w) * s)), \
+                         int(round(off_y + (py * oh / self.win_h) * s))
+                item["screen"] = (sx, sy)
+                items.append(item)
+                if item["error"]:
+                    errors.append(f"{me_name} / {item['name']}: {item['error']}")
+                elif item["warning"]:
+                    warnings.append(f"{me_name} / {item['name']}: {item['warning']}")
+
+            # --- précision de la peinture (3 points par carte) ---
+            for sx, sy in ((off_x + 8, off_y + 8),
+                           (off_x + dw // 2, off_y + dh // 2),
+                           (off_x + dw - 8, off_y + dh - 8)):
+                if not (0 <= sx < off_x + dw and 0 <= sy < off_y + dh):
+                    continue
+                okp, orig, err = self._paint_pixel_at(mask, s, off_x, off_y,
+                                                      sx, sy,
+                                                      self.paint_color, self.brush)
+                paint.append(dict(index=mi, map=me_name, screen=(sx, sy), orig=orig,
+                                  ok=okp, error=err))
+                if not okp:
+                    errors.append(f"peinture {me_name} ({sx},{sy}): {err}")
+
+        return self._verify_result_dict(not errors, items, paint, errors, warnings)
+
+    def _verify_result_dict(self, ok, items, paint, errors, warnings):
+        maps = self.data.get("maps") or []
+        counts = dict(maps=len(maps), objects=len(items), paint=len(paint),
+                      errors=len(errors), warnings=len(warnings))
+        lines = ["= TESTEUR COORDONNÉES (précision) ="]
+        lines.append(f"carte(s) {counts['maps']} · objet(s) {counts['objects']} · "
+                     f"test(s) peinture {counts['paint']}")
+        if errors:
+            lines.append("[ERREURS]")
+            for e in errors:
+                lines.append("  - " + e)
+        if warnings:
+            lines.append("[AVERTISSEMENTS]")
+            for w in warnings:
+                lines.append("  - " + w)
+        if not errors and not warnings:
+            lines.append("[OK] peinture, objets et conversions cohérents.")
+        lines.append(f"→ {'COHERENT' if ok else 'INCOHERENT'}")
+        report = "\n".join(lines)
+        return dict(ok=ok, counts=counts, items=items, paint=paint,
+                    errors=errors, warnings=warnings, report=report)
+
+    def _do_verify(self):
+        """Lance le testeur, met à jour la barre et toggle l'overlay."""
+        res = self.verify_coordinates()
+        self._verify_result = res
+        self._show_verify = not self._show_verify
+        if self._show_verify:
+            self.status = (f"Vérif : {res['counts']['objects']} objet(s) — "
+                           f"{res['counts']['errors']} erreur(s), "
+                           f"{res['counts']['warnings']} avert. — overlay actif (V)")
+        else:
+            self.status = "Mode vérification désactivé."
 
     def _selected_text(self):
         if self.selected_obj is None or not self.map_entry:
@@ -728,15 +917,16 @@ class MapEditor:
         save_btn = pygame.Rect(18, y1, 90, 28)
         saveas_btn = pygame.Rect(114, y1, 90, 28)
         new_btn = pygame.Rect(210, y1, 90, 28)
-        # rangée 2 : carte précédente / recharger
+        # rangée 2 : carte préc. / recharger / vérifier
         y2 = y1 + 31
         revert_btn = pygame.Rect(18, y2, 90, 28)
         undo_btn = pygame.Rect(114, y2, 90, 28)
+        verify_btn = pygame.Rect(210, y2, 90, 28)
         return dict(top=top, map_row=map_row, tools=tools, palette=palette,
                     brush_slider=brush_slider, alpha_slider=alpha_slider,
                     panel=panel,
                     save_btn=save_btn, saveas_btn=saveas_btn, new_btn=new_btn,
-                    revert_btn=revert_btn, undo_btn=undo_btn)
+                    revert_btn=revert_btn, undo_btn=undo_btn, verify_btn=verify_btn)
 
     def _field_rects(self, panel):
         if self.selected_obj is None or not self.map_entry:
@@ -763,6 +953,8 @@ class MapEditor:
             ov.set_alpha(self.mask_alpha)
             screen.blit(ov, (self.off_x, self.off_y))
         self._draw_markers(screen)
+        if self._show_verify:
+            self._draw_verify_overlay(screen)
         pygame.draw.rect(screen, GRAY_LIGHT, (self.off_x, self.off_y,
                                              self.display_w, self.display_h), 1, border_radius=2)
 
@@ -778,6 +970,41 @@ class MapEditor:
             pygame.draw.circle(screen, BLACK, (int(round(sx)), int(round(sy))), 8, 1)
             t = self.font_small.render(obj.get("name", f"O{i + 1}"), True, WHITE)
             screen.blit(t, (int(round(sx)) + 10, int(round(sy)) - 4))
+
+    def _draw_verify_overlay(self, screen):
+        """Testeur visible : anneau vert (OK) / rouge (erreur) autour de chaque
+        objet de la carte courante + sa position image (ox,oy) + légende."""
+        res = self._verify_result
+        if res is None or not self.map_entry:
+            return
+        idx = self.map_idx
+        for it in res.get("items") or []:
+            if it.get("index") != idx:
+                continue
+            screen_pos = it.get("screen")
+            if not screen_pos:
+                continue
+            sx, sy = screen_pos
+            ok = not (it.get("error") or it.get("warning"))
+            col = (90, 210, 120) if ok else RED
+            pygame.draw.circle(screen, col, (sx, sy), 14, 2)
+            if it.get("error"):
+                pygame.draw.circle(screen, RED, (sx, sy), 5)
+            ox, oy = (it.get("orig") or (0, 0))
+            mark = "✓ bleu" if it.get("is_blue") else "✗"
+            label = f"(ox,oy)=({ox},{oy}) {mark}"
+            t = self.font_small.render(label, True, col if ok else WHITE)
+            screen.blit(t, (sx + 18, sy - 26))
+        # légende (en haut à droite du canvas)
+        legend = [("✓", (90, 210, 120), "objet OK (pixel « bleu »)"),
+                  ("✗", RED, "hors « bleu » / hors limites")]
+        bx = max(self.off_x, self.off_x + self.display_w - 200)
+        by = self.off_y + 8
+        pygame.draw.rect(screen, (24, 26, 34), (bx, by, 200, 44),
+                         border_radius=4)
+        for i, (sym, col, txt) in enumerate(legend):
+            t = self.font_small.render(sym + " " + txt, True, col if i else WHITE)
+            screen.blit(t, (bx + 8, by + 8 + i * 20))
 
     def _btn(self, screen, rect, label, active=False, accent=ACCENT, font=None):
         pygame.draw.rect(screen, accent if active else DARK, rect, border_radius=6)
@@ -841,6 +1068,8 @@ class MapEditor:
         self._btn(screen, L["new_btn"], "Nouvelle", font=self.font_small)
         self._btn(screen, L["revert_btn"], "Carte préc.")
         self._btn(screen, L["undo_btn"], "Recharger")
+        self._btn(screen, L["verify_btn"], "Vérifier", active=self._show_verify,
+                  accent=(240, 210, 120))
         if self.selected_obj is not None and self.interact_warning:
             t = self.font_small.render(self.interact_warning, True, RED)
             screen.blit(t, (18, L["panel"].y + L["panel"].h + 6))
@@ -959,6 +1188,9 @@ class MapEditor:
             elif k == pygame.K_a: self.tool = "add"
             elif k == pygame.K_m: self.tool = "move"
             elif k == pygame.K_d: self.tool = "delete"
+            elif k == pygame.K_v:
+                self._do_verify()
+                return
             return
         # clics
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -1030,6 +1262,9 @@ class MapEditor:
                 return
             if L["undo_btn"].collidepoint(pos):
                 self._pop_undo()
+                return
+            if L["verify_btn"].collidepoint(pos):
+                self._do_verify()
                 return
             fr = self._field_rects(L["panel"])
             if fr is not None and fr["delete"].collidepoint(pos):
@@ -1125,6 +1360,9 @@ def main():
     ap.add_argument("--new-fond", help="Nouvelle aventure : image de fond.")
     ap.add_argument("--new-masque", help="Nouvelle aventure : image du masque.")
     ap.add_argument("--new-json", help="Nouvelle aventure : chemin du JSON de sortie.")
+    ap.add_argument("--verify", action="store_true",
+                    help="Testeur des coordonnées : vérifie peinture + objets + "
+                         "cohérence éditeur/jeu (headless). Code retour 0/1.")
     args = ap.parse_args()
     editor = MapEditor(args.adventure, headless=args.headless)
     if args.export:
@@ -1135,6 +1373,10 @@ def main():
         editor._create_new_adventure(args.new_fond, args.new_masque, args.new_json)
         print(editor.status)
         return
+    if args.verify:
+        res = editor.verify_coordinates()
+        print(res["report"])
+        sys.exit(0 if res["ok"] else 1)
     editor.run(max_frames=args.frames if args.frames else None)
 
 
