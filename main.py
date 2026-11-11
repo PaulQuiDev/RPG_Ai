@@ -22,6 +22,9 @@ Options :
                 Défaut : sauvegarde par défaut.
   --adv PATH    chemin d'un fichier d'aventure (JSON) à lancer directement
                 (bypass du menu de sélection).
+  --list        liste les cartes, interactions et NPCs de l'aventure
+                (sans lancer le jeu). Avec --adv : une aventure ; sans
+                --adv : toutes les aventures.
 """
 import argparse
 import re
@@ -99,6 +102,12 @@ def _build_parser():
         help="chemin d'un fichier d'aventure (JSON) à lancer directement "
         "(bypass du menu de sélection).",
     )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="liste les cartes, interactions et NPCs de l'aventure "
+        "(sans lancer le jeu).",
+    )
     return parser
 
 
@@ -129,6 +138,66 @@ def _list_adventures(adv_dir):
             title = f.stem
         results.append((f, title))
     return results
+
+
+def _print_adventure_summary(config_path: Path) -> None:
+    """Liste toutes les cartes et objets (interactions, NPCs) d'une
+    aventure — pour planifier rapidement les interactions et le contenu.
+
+    Format :
+        Aventure : <title>
+        ---
+        [1] <carte>
+            Interaction : <action> @ (x, y) — <description>
+            NPC : <name> @ (x, y) [behavior]
+        [2] <carte>
+            ...
+    """
+    import json
+    with config_path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+
+    title = data.get("title", config_path.stem)
+    start_map = data.get("start_map", data.get("name", ""))
+    maps = data.get("maps", [])
+    quest = data.get("quest", {})
+
+    print(f"Aventure : {title}")
+    if start_map:
+        print(f"Départ     : {start_map}")
+    if quest:
+        print(f"Quête      : {dict(quest)}")
+    print("-" * 60)
+
+    for i, m in enumerate(maps, 1):
+        name = m.get("name", f"Carte {i}")
+        requires = m.get("requires") or []
+        req_suf = f"  [requiert: {', '.join(requires)}]" if requires else ""
+        print(f"[{i}] {name}{req_suf}")
+
+        interactions = m.get("interactions", [])
+        if interactions:
+            for it in interactions:
+                action = it.get("action", "?")
+                pos = it.get("pos", [])
+                desc = it.get("description", "")
+                pos_s = f"({pos[0] if len(pos) > 0 else 0}, {pos[1] if len(pos) > 1 else 0})"
+                line = f"    Interaction : {action} @ {pos_s}"
+                if desc:
+                    line += f" — {desc}"
+                print(line)
+
+        npcs = m.get("npcs", [])
+        if npcs:
+            for n in npcs:
+                name_np = n.get("name", "?")
+                pos = n.get("pos", [])
+                behav = n.get("behavior", "?")
+                visible = n.get("visible", True)
+                pos_s = f"({pos[0] if len(pos) > 0 else 0}, {pos[1] if len(pos) > 1 else 0})"
+                vis_s = " [masqué]" if not visible else ""
+                print(f"    NPC : {name_np} @ {pos_s} [behavior={behav}]{vis_s}")
+        print()
 
 
 def select_adventure(screen, font):
@@ -200,6 +269,15 @@ def _show_error_window(screen, font, message):
 
 def main():
     args = _build_parser().parse_args()
+
+    if args.list:
+        if args.adv is not None:
+            _print_adventure_summary(Path(str(args.adv)))
+        else:
+            for path, title in _list_adventures(ADVENTURES_DIR):
+                _print_adventure_summary(path)
+                print()
+        return
 
     pygame.init()
 
