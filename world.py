@@ -1,11 +1,8 @@
 
-import pygame
-
 from settings import (
     WINDOW_WIDTH,
     WINDOW_HEIGHT,
     COLLISION_RADIUS,
-    MAPS,
 )
 from game_map import GameMap
 

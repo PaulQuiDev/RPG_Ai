@@ -9,18 +9,16 @@ Le monstre suit un chemin A* à travers les cellules praticables pour
 contourner les obstacles (bougies, rochers) et ne pas rester bloqué dans
 les couloirs étroits du combat.
 """
+from __future__ import annotations
 
 import heapq
 import math
-from pathlib import Path
 
 import pygame
 
 from settings import ANIMATION, ANIMATION_FPS, IDLE_COL, SPRITE_SCALE
 from settings import QUEST_CONFIG
 from sprite_loader import resolve_crop_config, slice_sprite_sheet
-
-BASE_DIR = Path(__file__).resolve().parent
 
 # Les sprites du monstre et de sa transformation (joueur -> boss) ne sont
 # plus en dur : ils proviennent de la configuration de la quête de l'aventure
