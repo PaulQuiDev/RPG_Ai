@@ -6,14 +6,14 @@
   "characters": [
     {
       "name": "Femme",
-      "sprite": "asset/carater/woman.png",
+      "sprite": "asset/characters/woman.png",
       "scale": 0.25,
       "speed": 220,
       "collision_radius": 5
     },
     {
       "name": "Monster",
-      "sprite": "asset/carater/monster.png",
+      "sprite": "asset/characters/monster.png",
       "scale": 0.35,
       "speed": 180,
       "collision_radius": 4.5
@@ -51,7 +51,7 @@
       "npcs": [
         {
           "name": "Champignon 1",
-          "sprite": "asset/carater/mush1.png",
+          "sprite": "asset/characters/mush1.png",
           "pos": [
             400,
             430
@@ -60,7 +60,7 @@
         },
         {
           "name": "Champignon 2",
-          "sprite": "asset/carater/mush2.png",
+          "sprite": "asset/characters/mush2.png",
           "pos": [
             720,
             400
@@ -69,7 +69,7 @@
         },
         {
           "name": "Champignon 3",
-          "sprite": "asset/carater/mush3.png",
+          "sprite": "asset/characters/mush3.png",
           "pos": [
             680,
             450
@@ -78,7 +78,7 @@
         },
         {
           "name": "Monstre",
-          "sprite": "asset/carater/monster.png",
+          "sprite": "asset/characters/monster.png",
           "behavior": "patrol",
           "speed": 55,
           "scale": 0.35,
@@ -96,7 +96,7 @@
         },
         {
           "name": "Champignon errant",
-          "sprite": "asset/carater/mush5.png",
+          "sprite": "asset/characters/mush5.png",
           "behavior": "patrol",
           "speed": 40,
           "scale": 0.2,
@@ -176,8 +176,8 @@
     },
     {
       "name": "Boss Combat",
-      "background": "asset/world/bossecombat.png",
-      "mask": "asset/world/bossecombatSEG.png",
+      "background": "asset/world/boss_combat.png",
+      "mask": "asset/world/boss_combatSEG.png",
       "interactions": [
         {
           "pos": [
@@ -232,8 +232,8 @@
     },
     {
       "name": "Post Combat",
-      "background": "asset/world/bossepasscombat.png",
-      "mask": "asset/world/bossepasscombatSEG.png",
+      "background": "asset/world/boss_pass_combat.png",
+      "mask": "asset/world/boss_pass_combatSEG.png",
       "interactions": [
         {
           "pos": [
@@ -267,8 +267,8 @@
   ],
   "sprite_overrides": {},
   "quest": {
-    "monster_sprite": "asset/carater/monster.png",
-    "monster2_sprite": "asset/carater/monster2.png",
+    "monster_sprite": "asset/characters/monster.png",
+    "monster2_sprite": "asset/characters/monster2.png",
     "monster_speed": 55.0,
     "monster2_speed": 180.0,
     "monster_spawn": [

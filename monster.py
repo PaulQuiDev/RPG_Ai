@@ -1,7 +1,7 @@
 """Monstre : entité hostile qui fonce lentement sur le joueur.
 
 Même format de sheet que les personnages (4 directions x 3 frames, format
-data-driven via `sprite_loader`). Chargée depuis `asset/carater/monster.png`
+data-driven via `sprite_loader`). Chargée depuis `asset/characters/monster.png`
 (forme initiale) ; `set_sprite()` permet de passer à `monster2.png` (forme
 définitive après l'interaction avec le trône).
 

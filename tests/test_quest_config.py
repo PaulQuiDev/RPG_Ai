@@ -29,8 +29,8 @@ from settings import ADVENTURES_DIR, BASE_DIR, QUEST_CONFIG, load_adventure
 DEFAULT_ADV = ADVENTURES_DIR / "demo-test.json"
 
 # Pattern : chemin d'asset d'aventure (relatif au projet), ex.
-#   "asset/carater/monster2.png"
-ASSET_RE = re.compile(r"asset/(carater|world)/[^\"']+\.png")
+#   "asset/characters/monster2.png"
+ASSET_RE = re.compile(r"asset/(characters|world)/[^\"']+\\.png")
 
 
 def _load_raw(path: Path) -> dict:
@@ -168,7 +168,7 @@ class TestQuestDeclaredInJson(QuestTestMixin, unittest.TestCase):
         """Régression P4 : ``monster2.png`` (sprite du monstre transformé)
         doit figurer dans le JSON. C'était absent avant la correction."""
         declared = self._json_declared()
-        self.assertIn("asset/carater/monster2.png", declared)
+        self.assertIn("asset/characters/monster2.png", declared)
 
 
 # ---------------------------------------------------------------------------
@@ -190,8 +190,8 @@ class TestQuestConfigFromJson(QuestTestMixin, unittest.TestCase):
         self.assertEqual(c.monster_speed, q["monster_speed"])
         self.assertEqual(c.monster2_speed, q["monster2_speed"])
         self.assertEqual(c.candle_total, q["candle_total"])
-        self.assertEqual(self._rel(c.monster_sprite), "asset/carater/monster.png")
-        self.assertEqual(self._rel(c.monster2_sprite), "asset/carater/monster2.png")
+        self.assertEqual(self._rel(c.monster_sprite), "asset/characters/monster.png")
+        self.assertEqual(self._rel(c.monster2_sprite), "asset/characters/monster2.png")
         self.assertTrue(c.monster_sprite.is_absolute())
         self.assertTrue(c.monster2_sprite.is_absolute())
 
@@ -238,12 +238,12 @@ class TestAssetContract(QuestTestMixin, unittest.TestCase):
 
 class TestNoHardcodedAdvantageAssets(QuestTestMixin, unittest.TestCase):
     """Le cœur du jeu (modules de logique) ne référence **aucun** asset
-    d'aventure (``asset/carater/*.png``, ``asset/world/*.png``) en dur :
+    d'aventure (``asset/characters/*.png``, ``asset/world/*.png``) en dur :
     tout passe par le JSON.
 
     C'est le vrai garde-fou du bug P4 : avant, ``monster.py``/``game.py``
-    contenaient ``MONSTER_SPRITE_FINAL = BASE_DIR / "asset/carater/monster2.png"``
-    et ``MONSTER_SPRITE = BASE_DIR / "asset/carater/monster.png"`` (en dur,
+    contenaient ``MONSTER_SPRITE_FINAL = BASE_DIR / "asset/characters/monster2.png"``
+    et ``MONSTER_SPRITE = BASE_DIR / "asset/characters/monster.png"`` (en dur,
     hors JSON). Ce test s'assure qu'aucun tel chemin ne revient dans le code
     (les fallbacks `DEFAULT_*` vivent dans ``quest_config.py``, le config
     moteur dans ``settings.py``)."""

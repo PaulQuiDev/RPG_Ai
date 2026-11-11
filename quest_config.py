@@ -18,8 +18,8 @@ from typing import Any, Dict, List, Optional, Tuple
 # Défauts (retour arrière robuste si un JSON n'a pas de bloc ``quest``.
 # Les aventures livrées le déclarent toujours — c'est vérifié par
 # tests/test_quest_config.py).
-DEFAULT_MONSTER_SPRITE = "asset/carater/monster.png"
-DEFAULT_MONSTER2_SPRITE = "asset/carater/monster2.png"
+DEFAULT_MONSTER_SPRITE = "asset/characters/monster.png"
+DEFAULT_MONSTER2_SPRITE = "asset/characters/monster2.png"
 DEFAULT_MONSTER_SPEED = 55.0
 DEFAULT_MONSTER2_SPEED = 180.0
 DEFAULT_MONSTER_SPAWN = (860.0, 540.0)
