@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   pages: write
+  id-token: write
 
 jobs:
   deploy:
@@ -29,11 +30,18 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pages")
           echo "PUT /pages status: $STATUS"
           echo "Reponse:"
-          cat /tmp/pages_resp 2>/dev/null || echo "(pas de corps de reponse)"
+          cat /tmp/pages_resp 2>/dev/null || echo "(pas de reponse)"
           echo ""
           echo "::endgroup::"
+
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: build/web
+          if-no-files-found: error
 
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
         with:
-          directory: build/web
+          artifact_name: site
