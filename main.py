@@ -8,7 +8,7 @@ Le moteur est *data-driven* : chaque aventure = un JSON
 orchestre les *briques* du moteur (monstre, bougies, transformation,
 dévoration, fuite, redirection) sans en développer de nouvelle.
 
-Options :
+Options CLI :
   --debug       affiche la carte de collision, les boîtes d'interaction
                 (itboxes) et la position du joueur (console + overlay)
   --window WxH  résolution de la fenêtre (ex. --window 800x600).
@@ -25,8 +25,14 @@ Options :
   --list        liste les cartes, interactions et NPCs de l'aventure
                 (sans lancer le jeu). Avec --adv : une aventure ; sans
                 --adv : toutes les aventures.
+
+Mode web (pygbag / WASM) :
+  L'aventure par défaut (``settings.DEFAULT_ADVENTURE``) est lancée
+  automatiquement. Le menu de sélection (police système) n'est montré que
+  sur desktop, quand ``--adv`` n'est pas fourni.
 """
 import argparse
+import asyncio
 import re
 import sys
 from pathlib import Path
@@ -36,6 +42,7 @@ import pygame
 from settings import (
     ADVENTURES_DIR,
     COLLISIONS_ENABLED_DEFAULT,
+    DEFAULT_ADVENTURE,
     load_adventure,
     WINDOW_BACKGROUND,
     WINDOW_HEIGHT,
@@ -48,9 +55,49 @@ from adventure import load_adventure_logic
 _WINDOW_RE = re.compile(r"^\s*(\d+)\s*[xXx×]\s*(\d+)\s*$")
 
 
+def _make_font(size):
+    """Création robuste d'une police : ``SysFont("sans")`` en priorité,
+    fallback sur la police par défaut de pygame (``Font(None, size)``).
+
+    Indispensable pour que le HUD et le menu s'affichent dans le runtime
+    WASM (pygbag), où le système de polices ne résout pas toujours le nom
+    "sans"."""
+    try:
+        return pygame.font.SysFont("sans", size)
+    except Exception:
+        return pygame.font.Font(None, size)
+
+
+def _is_web():
+    """Détecte le runtime web (pygbag / WASM).
+
+    Le runtime web charge le jeu dans un VFS sous
+    ``/data/data/<bundle>/assets/`` (l'index.html généré par pygbag fixe
+    ``__file__`` = ``/data/data/<bundle>/assets/main.py``). Sur desktop,
+    le chemin est une vraie racine du système.
+    """
+    candidates = []
+    try:
+        f = globals().get("__file__", "")
+        if f:
+            candidates.append(str(f))
+    except Exception:
+        pass
+    try:
+        argv0 = sys.argv[0] if sys.argv else ""
+        if argv0:
+            candidates.append(argv0)
+    except Exception:
+        pass
+    for p in candidates:
+        if "/data/data/" in p:
+            return True
+    return False
+
+
 def _parse_window_size(value):
-    """Parse `WxH` (ex. `800x600`, `800X600`, `800x600`, `800×600`) en
-    (width, height). Lève ValueError si le format ou la valeur est invalide."""
+    """Parse `WxH` (ex. `800x600`) en (width, height).
+    Lève ValueError si le format ou la valeur est invalide."""
     match = _WINDOW_RE.match(value)
     if not match:
         raise ValueError("Format attendu : WxH (ex. 800x600)")
@@ -61,11 +108,7 @@ def _parse_window_size(value):
 
 
 def _build_parser():
-    """Construit le parser d'options CLI.
-
-    `--window` et `--fullscreen` sont mutuellement exclusifs : si les deux
-    sont passés, `parse_args()` lève `SystemExit` (code 2).
-    """
+    """Construit le parser d'options CLI."""
     parser = argparse.ArgumentParser(description="Jeu RPG (pygame)")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -113,9 +156,8 @@ def _build_parser():
 
 def _blit_rect(game_w, game_h, win_w, win_h):
     """Retourne (x, y, bw, bh) : le plus grand rectangle centré de la
-    fenêtre qui contient le jeu (ratio d'aspect game_w x game_h) sans le
-    déformer (letterbox). bw/bh = taille ciblée du smoothscale,
-    (x, y) = position de ce rectangle dans la fenêtre."""
+    fenêtre qui contient le jeu (ratio aspect game_w x game_h) sans le
+    déformer (letterbox)."""
     scale = min(win_w / game_w, win_h / game_h)
     bw = max(1, round(game_w * scale))
     bh = max(1, round(game_h * scale))
@@ -132,6 +174,7 @@ def _list_adventures(adv_dir):
         try:
             with f.open("r", encoding="utf-8") as fh:
                 import json
+
                 data = json.load(fh)
             title = data.get("title", f.stem)
         except (OSError, ValueError):
@@ -141,19 +184,9 @@ def _list_adventures(adv_dir):
 
 
 def _print_adventure_summary(config_path: Path) -> None:
-    """Liste toutes les cartes et objets (interactions, NPCs) d'une
-    aventure — pour planifier rapidement les interactions et le contenu.
-
-    Format :
-        Aventure : <title>
-        ---
-        [1] <carte>
-            Interaction : <action> @ (x, y) — <description>
-            NPC : <name> @ (x, y) [behavior]
-        [2] <carte>
-            ...
-    """
+    """Liste toutes les cartes et objets d'une aventure (mode --list)."""
     import json
+
     with config_path.open("r", encoding="utf-8") as fh:
         data = json.load(fh)
 
@@ -181,7 +214,8 @@ def _print_adventure_summary(config_path: Path) -> None:
                 action = it.get("action", "?")
                 pos = it.get("pos", [])
                 desc = it.get("description", "")
-                pos_s = f"({pos[0] if len(pos) > 0 else 0}, {pos[1] if len(pos) > 1 else 0})"
+                pos_s = f"({pos[0] if len(pos) > 0 else 0}, " \
+                    f"{pos[1] if len(pos) > 1 else 0})"
                 line = f"    Interaction : {action} @ {pos_s}"
                 if desc:
                     line += f" — {desc}"
@@ -194,22 +228,47 @@ def _print_adventure_summary(config_path: Path) -> None:
                 pos = n.get("pos", [])
                 behav = n.get("behavior", "?")
                 visible = n.get("visible", True)
-                pos_s = f"({pos[0] if len(pos) > 0 else 0}, {pos[1] if len(pos) > 1 else 0})"
+                pos_s = f"({pos[0] if len(pos) > 0 else 0}, " \
+                    f"{pos[1] if len(pos) > 1 else 0})"
                 vis_s = " [masqué]" if not visible else ""
-                print(f"    NPC : {name_np} @ {pos_s} [behavior={behav}]{vis_s}")
+                print(f"    NPC : {name_np} @ {pos_s} "
+                      f"[behavior={behav}]{vis_s}")
         print()
 
 
-def select_adventure(screen, font):
-    """Menu de sélection des aventures.
+def _show_error_window(screen, font, message):
+    """Écran d'erreur plein écran (fond rouge). Retourne après une
+    interaction (touche, clic ou fermeture)."""
+    screen.fill((90, 20, 20))
+    y = 40
+    for line in message.splitlines():
+        surf = font.render(line, True, (255, 255, 255))
+        screen.blit(surf, (40, y))
+        y += 32
+    pygame.display.flip()
+
+
+async def _await_input(screen):
+    """Attend une interaction (touche / clic / fermeture)."""
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type in (pygame.QUIT, pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                running = False
+        await asyncio.sleep(0)
+
+
+async def select_adventure(screen, font):
+    """Menu de sélection des aventures (desktop).
 
     Retourne le ``Path`` du fichier JSON choisi, ou ``None`` pour quitter.
     Navigation : flèches ↑/↓ | Entrée : lancer | Échap : quitter.
     """
-    small = pygame.font.SysFont("sans", 16)
+    small = _make_font(16)
     entries = _list_adventures(ADVENTURES_DIR)
     if not entries:
-        print("Aucune aventure trouvée dans", ADVENTURES_DIR, "— sortie.")
+        print("Aucune aventure trouvée dans", ADVENTURES_DIR, "— sortie.",
+              flush=True)
         return None
 
     selected = 0
@@ -229,7 +288,8 @@ def select_adventure(screen, font):
                     return entries[selected][0]
 
         screen.fill((30, 30, 40))
-        title_surf = font.render("Choisir une aventure", True, (240, 240, 240))
+        title_surf = font.render("Choisir une aventure", True,
+                                 (240, 240, 240))
         screen.blit(title_surf, (40, 70))
         sub_surf = small.render(
             "Flèches : naviguer | Entrée : lancer | Échap : quitter",
@@ -244,30 +304,12 @@ def select_adventure(screen, font):
             screen.blit(surf, (40, y))
             y += 46
         pygame.display.flip()
+        await asyncio.sleep(0)
 
     return None
 
 
-def _show_error_window(screen, font, message):
-    """Afficher un écran d'erreur plein écran (fond rouge) et attendre
-    une interaction (touche, clic ou fermeture de fenêtre) avant de
-    rendre le contrôle — utile quand le chargement échoue et qu'une
-    console n'est pas visible."""
-    screen.fill((90, 20, 20))
-    y = 40
-    for line in message.splitlines():
-        surf = font.render(line, True, (255, 255, 255))
-        screen.blit(surf, (40, y))
-        y += 32
-    pygame.display.flip()
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type in (pygame.QUIT, pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-                running = False
-
-
-def main():
+async def main():
     args = _build_parser().parse_args()
 
     if args.list:
@@ -295,27 +337,26 @@ def main():
 
     screen = pygame.display.set_mode((display_w, display_h), display_flags)
     pygame.display.set_caption(WINDOW_TITLE)
-    font = pygame.font.SysFont("sans", 18)
+    font = _make_font(18)
 
     # --- Sélection de l'aventure -------------------------------------------
     if args.adv is not None:
         config_path = Path(str(args.adv))
         print(f"Chargement de l'aventure : {config_path}", flush=True)
+    elif _is_web():
+        config_path = ADVENTURES_DIR / f"{DEFAULT_ADVENTURE}.json"
+        print(f"Mode web : aventure par défaut = "
+              f"{config_path.name}", flush=True)
     else:
-        config_path = select_adventure(screen, font)
+        config_path = await select_adventure(screen, font)
         if config_path is None:
-            print("Aventure annulée, sortie.", file=sys.stderr, flush=True)
-            pygame.quit()
+            print("Aventure annulée, sortie.", flush=True)
             return
         config_path = Path(config_path)
 
     # --- Chargement de l'aventure (avec affichage d'erreur visible) ---
-    # L'aventure = JSON (personnages/cartes) + logique
-    # (``adventures/<nom>/logic.py``, orchestration des briques).
     try:
         characters, maps, meta = load_adventure(config_path)
-        # Nom de l'aventure = stem du JSON ; la logique est dans
-        # ``adventures/<stem>/logic.py``.
         adventure = load_adventure_logic(config_path.stem)
     except Exception as error:
         console_msg = (
@@ -330,44 +371,46 @@ def main():
             "(Appuyez sur une touche pour quitter.)"
         )
         _show_error_window(screen, font, message)
-        pygame.quit()
-        sys.exit(1)
+        await _await_input(screen)
+        return
     pygame.display.set_caption(meta.get("window_title", WINDOW_TITLE))
 
     if not characters:
-        console_msg = (
-            f"Erreur : l'aventure {config_path} ne contient aucun personnage."
+        print(
+            f"Erreur : l'aventure {config_path} ne contient aucun "
+            f"personnage.",
+            file=sys.stderr,
+            flush=True,
         )
-        print(console_msg, file=sys.stderr, flush=True)
-        message = (
-            "ERREUR : l'aventure chargée ne contient aucun personnage.\n"
-            f"fichier : {config_path}\n"
-            "(Appuyez sur une touche pour quitter.)"
+        _show_error_window(
+            screen,
+            font,
+            (
+                "ERREUR : l'aventure chargée ne contient aucun personnage.\n"
+                f"fichier : {config_path}\n"
+                "(Appuyez sur une touche pour quitter.)"
+            ),
         )
-        _show_error_window(screen, font, message)
-        pygame.quit()
-        sys.exit(1)
+        await _await_input(screen)
+        return
     if not maps:
-        console_msg = (
-            f"Erreur : l'aventure {config_path} ne contient aucune carte."
+        print(
+            f"Erreur : l'aventure {config_path} ne contient aucune carte.",
+            file=sys.stderr,
+            flush=True,
         )
-        print(console_msg, file=sys.stderr, flush=True)
-        message = (
-            "ERREUR : l'aventure chargée ne contient aucune carte.\n"
-            f"fichier : {config_path}\n"
-            "(Appuyez sur une touche pour quitter.)"
+        _show_error_window(
+            screen,
+            font,
+            (
+                "ERREUR : l'aventure chargée ne contient aucune carte.\n"
+                f"fichier : {config_path}\n"
+                "(Appuyez sur une touche pour quitter.)"
+            ),
         )
-        _show_error_window(screen, font, message)
-        pygame.quit()
-        sys.exit(1)
+        await _await_input(screen)
+        return
 
-    # Le jeu s'exécute à la résolution logique (960x720) sur une surface
-    # hors-écran ; main.py blitte (smoothscale + letterbox) cette surface
-    # dans la fenêtre. Toute la logique de jeu (coordonnées, HUD, sprites,
-    # collisions) reste en 960x720 : changer la fenêtre ne casse rien.
-    # La configuration de la quête (bloc ``quest`` de l'aventure) et la
-    # logique (fichier ``logic.py``) sont passées explicitement au ``Game`` :
-    # le moteur expose les briques, l'aventure orchestre la quête.
     quest = meta.get("quest")
 
     game_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -395,19 +438,15 @@ def main():
             "(Appuyez sur une touche pour quitter.)"
         )
         _show_error_window(screen, font, message)
-        pygame.quit()
-        sys.exit(1)
+        await _await_input(screen)
+        return
 
     print("Jeu initialisé, lancement...", flush=True)
 
-    # --load : reprise de partie avant la boucle.
     if args.load:
         if not game.load(args.load):
             print("Avertissement : sauvegarde ignorée, partie fraîche.")
 
-    # Le jeu est blitté en conservant son ratio d'aspect (letterbox).
-    # Fast path : fenêtre de la résolution logique -> blit 1:1 (pas de
-    # smoothscale). Sinon, smoothscale + bandes noires.
     blit_x, blit_y, blit_w, blit_h = _blit_rect(
         WINDOW_WIDTH, WINDOW_HEIGHT, display_w, display_h
     )
@@ -437,10 +476,10 @@ def main():
                 (blit_x, blit_y),
             )
         pygame.display.flip()
+        await asyncio.sleep(0)
 
-    pygame.quit()
-    print("Fin de la partie (fenêtre fermée).", flush=True)
+    print("Fin de la partie.", flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -5,3 +5,5 @@ tests/__pycache__/*
 
 # Overrides de coupe générés par tuner.py (spécifique à la machine)
 asset/sprite_configs.json
+/asset/characters/avC
+/asset/world/avM

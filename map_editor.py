@@ -868,7 +868,7 @@ class MapEditor:
             fond_path = filedialog.askopenfilename(
                 parent=root,
                 title="Choisir le fond (image)",
-                filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp"), ("Tous", "*.*")])
+                filetypes=[("Images", "*.png *.jpg *.jpeg"), ("Tous", "*.*")])
             root.update()
             if not fond_path:
                 root.destroy()
@@ -876,7 +876,7 @@ class MapEditor:
             masque_path = filedialog.askopenfilename(
                 parent=root,
                 title="Choisir le masque (segmentation)",
-                filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp"), ("Tous", "*.*")])
+                filetypes=[("Images", "*.png *.jpg *.jpeg"), ("Tous", "*.*")])
             root.update()
             if not masque_path:
                 root.destroy()

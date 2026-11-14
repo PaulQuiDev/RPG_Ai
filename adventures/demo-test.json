@@ -213,6 +213,14 @@
             498
           ],
           "action": "light_candle"
+        },
+        {
+          "pos": [
+            150,
+            338
+          ],
+          "name": "porte",
+          "action": ""
         }
       ],
       "perspective": {
