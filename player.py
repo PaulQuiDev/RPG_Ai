@@ -89,18 +89,23 @@ class Player:
         self._sync_stats()
 
 
-    def update(self, dt, keys, game_map, collisions_enabled):
+    def update(self, dt, keys, game_map, collisions_enabled, touch_dir=None):
         move_x = 0
         move_y = 0
 
-        if keys[pygame.K_LEFT]:
-            move_x -= 1
-        if keys[pygame.K_RIGHT]:
-            move_x += 1
-        if keys[pygame.K_UP]:
-            move_y -= 1
-        if keys[pygame.K_DOWN]:
-            move_y += 1
+        # Direction : la croix tactile (mobile) remplace le clavier ; sinon
+        # les flèches clavier.
+        if touch_dir is not None:
+            move_x, move_y = touch_dir
+        else:
+            if keys[pygame.K_LEFT]:
+                move_x -= 1
+            if keys[pygame.K_RIGHT]:
+                move_x += 1
+            if keys[pygame.K_UP]:
+                move_y -= 1
+            if keys[pygame.K_DOWN]:
+                move_y += 1
 
         self.moving = move_x != 0 or move_y != 0
 

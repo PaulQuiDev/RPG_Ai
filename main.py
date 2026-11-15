@@ -425,6 +425,7 @@ async def main():
             save_path=args.save,
             quest=quest,
             adventure=adventure,
+            mobile=_is_web(),
         )
     except Exception as error:
         console_msg = (

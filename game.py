@@ -55,6 +55,7 @@ class Game:
         save_path=None,
         quest=None,
         adventure=None,
+        mobile=False,
     ):
         """
         Args:
@@ -76,6 +77,20 @@ class Game:
         self.character_index = character_index
         self.collisions_enabled = collisions_enabled
         self.state = GameState.RUNNING
+
+        # --- Contrôles mobiles (touch) : croix directionnelle + bouton
+        #     interagir. Activé sur le runtime web (pygbag) via _is_web().
+        #     touch_dir : direction imposée par la croix (None = clavier).
+        #     _mobile_interact : bouton interagir en attente (consommé 1 frame).
+        self.mobile = mobile
+        self._mobile_compass_cx = 256
+        self._mobile_compass_cy = 640
+        self._mobile_compass_r = 54
+        self._mobile_interact_cx = 836
+        self._mobile_interact_cy = 640
+        self._mobile_interact_r = 34
+        self._mobile_touch_dir = None
+        self._mobile_interact = False
 
         # Debug : overlay (--debug) + position dans la console.
         self.debug = debug
@@ -146,7 +161,12 @@ class Game:
     # -- Événements (machine à états) -----------------------------------------
 
     def handle_events(self):
-        """Traitement des événements pygame ; retourne l'état courant."""
+        """Traitement des événements pygame ; retourne l'état courant.
+
+        Sur le runtime web (pygbag), le touch est livré comme des événements
+        souris (MOUSEBUTTONDOWN / MOUSEBUTTONUP, ``event.pos`` en coordonnées
+        logiques 960x720) : on y gère la croix directionnelle et le bouton
+        « interagir » (mobile)."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.state = GameState.QUIT
@@ -154,6 +174,11 @@ class Game:
                 handler = self._key_handler_for(self.state)
                 if handler is not None:
                     handler(event.key)
+            elif self.mobile and event.type in (
+                pygame.MOUSEBUTTONDOWN,
+                pygame.MOUSEBUTTONUP,
+            ):
+                self._handle_mouse_touch(event)
         return self.state
 
     def _key_handler_for(self, state):
@@ -184,6 +209,56 @@ class Game:
     def _handle_paused_key(self, key):
         if key == pygame.K_ESCAPE:
             self.state = GameState.RUNNING
+
+    # -- Contrôles mobiles (touch) --------------------------------------------
+
+    def _handle_mouse_touch(self, event):
+        """Gestion du touch (livré comme souris) : bouton interagir + croix."""
+        pos = event.pos
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Bouton « interagir » (droite).
+            if self._point_in_circle(
+                pos,
+                self._mobile_interact_cx,
+                self._mobile_interact_cy,
+                self._mobile_interact_r,
+            ):
+                self._mobile_interact = True
+                return
+            # Croix directionnelle : quadrant touché => direction imposée.
+            d = self._compass_direction(pos)
+            if d is not None:
+                self._mobile_touch_dir = d
+        else:  # MOUSEBUTTONUP : on lâche => on arrête le déplacement.
+            self._mobile_touch_dir = None
+
+    def _point_in_circle(self, pos, cx, cy, r):
+        dx = pos[0] - cx
+        dy = pos[1] - cy
+        return dx * dx + dy * dy <= r * r
+
+    def _compass_direction(self, pos):
+        """Direction imposée par le quadrant de la croix touché (ou None)."""
+        dx = pos[0] - self._mobile_compass_cx
+        dy = pos[1] - self._mobile_compass_cy
+        if dx > 0:
+            if dy > dx:
+                return (0, 1)       # bas
+            if dy < -dx:
+                return (0, -1)      # haut
+            return (1, 0)           # droit
+        if dx < 0:
+            if dy > -dx:
+                return (0, 1)       # bas
+            if dy < dx:
+                return (0, -1)      # haut
+            return (-1, 0)          # gauche
+        # dx == 0 : haut/bas uniquement si assez écarté du centre.
+        if dy > 12:
+            return (0, 1)
+        if dy < -12:
+            return (0, -1)
+        return None
 
     def _change_character(self):
         """Changer de personnage en conservant la position."""
@@ -280,9 +355,19 @@ class Game:
         # Personnage (NPC) de la carte : déplacement (patrouille / fuite).
         self.game_map.update_npcs(dt, self.player)
 
+        # Contrôles mobiles : la croix impose une direction qui remplace les
+        # flèches clavier (mobile uniquement ; sinon le clavier reste actif).
+        touch_dir = None
+        if self.mobile and self._mobile_touch_dir is not None:
+            touch_dir = self._mobile_touch_dir
         self.player.update(
-            dt, keys, self.game_map, self.collisions_enabled
+            dt, keys, self.game_map, self.collisions_enabled, touch_dir
         )
+
+        # Bouton « interagir » (mobile) : consommé ici (une frame).
+        if self.mobile and self._mobile_interact:
+            self._interact()
+            self._mobile_interact = False
 
         self.world.check_transition(self.player)
         self.game_map = self.world.game_map
@@ -338,6 +423,8 @@ class Game:
             self._draw_debug_overlay()
         if self.state == GameState.PAUSED:
             self._draw_pause_overlay()
+        if self.mobile:
+            self._draw_mobile_controls()
 
     def _draw_monster(self):
         """Affiche le monstre (si vivant et sur la carte de combat)."""
@@ -435,6 +522,50 @@ class Game:
         )
         w, h = self.screen.get_size()
         self.screen.blit(text, ((w - text.get_width()) // 2, (h - text.get_height()) // 2))
+
+    def _draw_mobile_controls(self):
+        """Contrôles tactiles (mobile/web) : croix directionnelle (gauche) +
+        bouton « interagir » (droite), en transparence, dans l'espace logique
+        960x720 (même espace que ``event.pos``)."""
+        screen = self.screen
+        white_a = (255, 255, 255, 190)
+
+        # --- Croix directionnelle (gauche) ---
+        cx, cy = self._mobile_compass_cx, self._mobile_compass_cy
+        pygame.draw.circle(
+            screen, (18, 28, 48, 100), (cx, cy), self._mobile_compass_r + 2
+        )
+        pygame.draw.polygon(
+            screen, white_a,
+            [(cx, cy - 44), (cx - 20, cy - 16), (cx + 20, cy - 16)], 0
+        )  # haut
+        pygame.draw.polygon(
+            screen, white_a,
+            [(cx + 44, cy), (cx + 16, cy - 20), (cx + 16, cy + 20)], 0
+        )  # droit
+        pygame.draw.polygon(
+            screen, white_a,
+            [(cx, cy + 44), (cx + 20, cy + 16), (cx - 20, cy + 16)], 0
+        )  # bas
+        pygame.draw.polygon(
+            screen, white_a,
+            [(cx - 44, cy), (cx - 16, cy + 20), (cx - 16, cy - 20)], 0
+        )  # gauche
+        pygame.draw.circle(screen, white_a, (cx, cy), 4)
+
+        # --- Bouton « interagir » (droite) ---
+        ix, iy = self._mobile_interact_cx, self._mobile_interact_cy
+        pygame.draw.circle(
+            screen, (40, 120, 40, 120), (ix, iy), self._mobile_interact_r
+        )
+        pygame.draw.circle(
+            screen, (90, 200, 90, 110), (ix, iy), self._mobile_interact_r - 3
+        )
+        label = self.font.render("I", True, (255, 255, 255))
+        screen.blit(
+            label,
+            (ix - label.get_width() // 2, iy - label.get_height() // 2 - 1),
+        )
 
     # -- Debug (--debug) ------------------------------------------------------
 
