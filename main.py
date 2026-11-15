@@ -312,6 +312,40 @@ async def select_adventure(screen, font):
 async def main():
     args = _build_parser().parse_args()
 
+    # Mode debug depuis la page web : ouvrir la page avec le paramètre
+    # URL ``?debug`` (ou ``?debug=1``) active le debug overlay
+    # (masque de collision, boîtes d'interaction, positions joueur/NPC,
+    #  chemins NPC et A* du monstre). Sur le web, ``sys.argv`` est
+    # contrôlé par le runtime ; on lit la requête de l'URL à la place
+    # de la ligne de commande.
+    if _is_web() and not args.debug:
+        search = ""
+        try:
+            import sys as _sys
+
+            # Le runtime web expose le module de plateforme (window,
+            # document) sous ``__EMSCRIPTEN__`` ; on retombe sur
+            # ``platform`` si celui-ci est déjà importé.
+            mod = (
+                _sys.modules.get("__EMSCRIPTEN__")
+                or _sys.modules.get("platform")
+            )
+            if mod is None:
+                try:
+                    import platform as _pbag
+
+                    mod = _pbag
+                except Exception:
+                    mod = None
+            loc = getattr(getattr(mod, "window", None), "location", None)
+            if loc is not None:
+                search = str(loc.search)
+            if "debug" in search:
+                args.debug = True
+                print("Mode debug activé via l'URL (?debug).", flush=True)
+        except Exception:
+            pass
+
     if args.list:
         if args.adv is not None:
             _print_adventure_summary(Path(str(args.adv)))
